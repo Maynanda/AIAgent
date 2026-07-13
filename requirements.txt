@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────
+# ARIA / HERMES — Python Dependencies
+# Python 3.11+
+# ─────────────────────────────────────────────────────────────
+
+# ── Web Framework ─────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+websockets==13.1
+httpx==0.27.2
+
+# ── Settings ──────────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# ── Database ──────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pgvector==0.3.6
+
+# ── LLM — HuggingFace Transformers ───────────────────────────
+torch>=2.3.0                     # install separately with CUDA:
+                                 # pip install torch --index-url https://download.pytorch.org/whl/cu121
+transformers>=4.46.0
+accelerate>=1.1.0
+bitsandbytes>=0.44.0             # 4-bit / 8-bit quantization
+sentencepiece>=0.2.0
+tokenizers>=0.20.0
+qwen-vl-utils>=0.0.8             # Qwen2.5-VL utilities
+
+# ── Embedding ─────────────────────────────────────────────────
+sentence-transformers>=3.3.0     # nomic-embed-text-v1.5
+einops>=0.8.0                    # required by nomic model
+
+# ── STT (Whisper) ─────────────────────────────────────────────
+openai-whisper>=20240930
+ffmpeg-python>=0.2.0             # audio processing
+
+# ── NLP / NER ─────────────────────────────────────────────────
+spacy>=3.8.2
+# run after install: python -m spacy download en_core_web_sm
+
+# ── Email ─────────────────────────────────────────────────────
+imapclient>=3.0.1
+aiosmtplib>=3.0.2
+email-validator==2.2.0
+beautifulsoup4>=4.12.3           # HTML email parsing
+lxml>=5.3.0
+
+# ── Background Jobs ───────────────────────────────────────────
+apscheduler>=3.10.4
+
+# ── Security / Sandboxing ─────────────────────────────────────
+RestrictedPython>=7.3            # safe code execution (layer 1 fallback)
+
+# ── Utilities ─────────────────────────────────────────────────
+numpy>=1.26.0
+python-dateutil>=2.9.0
+tenacity>=9.0.0                  # retry logic
+structlog>=24.4.0                # structured logging
+rich>=13.9.4                     # pretty terminal output
+uuid6>=2024.1.12                 # UUID7 time-ordered IDs
+orjson>=3.10.11                  # fast JSON
+
+# ── Dev / Testing ─────────────────────────────────────────────
+pytest>=8.3.3
+pytest-asyncio>=0.24.0
+httpx>=0.27.2                    # test client

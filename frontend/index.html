@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARIA — Hermes Dashboard</title>
+  <meta name="description" content="Your personal AI second brain. Projects, emails, and activities — unified." />
+  <link rel="stylesheet" href="/assets/css/main.css" />
+  <style>
+    /* ── Dashboard-specific styles ── */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 24px;
+    }
+
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .project-card {
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      cursor: pointer;
+      transition: all var(--transition-base);
+      position: relative;
+      overflow: hidden;
+      text-decoration: none;
+    }
+
+    .project-card::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0;
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity var(--transition-base);
+    }
+
+    .project-card:hover {
+      border-color: var(--border-accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .project-card:hover::after { opacity: 1; }
+
+    .project-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .project-name {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.3;
+      flex: 1;
+    }
+
+    .project-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 14px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .project-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .project-progress-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .ai-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(124, 58, 237, 0.2);
+      border: 1px solid var(--border-accent);
+      border-radius: 99px;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-accent);
+      font-family: var(--font-mono);
+    }
+
+    /* Sidebar */
+    .sidebar-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    /* Quick ask bar */
+    .quick-ask {
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .quick-ask::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(124,58,237,0.05), rgba(6,182,212,0.05));
+      pointer-events: none;
+    }
+
+    .quick-ask-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .quick-ask-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .quick-ask-input {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 14px;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      outline: none;
+      transition: all var(--transition-fast);
+    }
+
+    .quick-ask-input::placeholder { color: var(--text-muted); }
+    .quick-ask-input:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    /* Suggestions */
+    .suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .suggestion-chip {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: 99px;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .suggestion-chip:hover {
+      background: rgba(124,58,237,0.1);
+      border-color: var(--border-accent);
+      color: var(--text-accent);
+    }
+
+    /* Hermes response box */
+    .hermes-response {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      background: rgba(124,58,237,0.08);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      min-height: 40px;
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- ── Navigation Sidebar ── -->
+  <nav class="nav-sidebar" id="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item active" id="nav-dashboard">
+        <span class="nav-icon">⊞</span> Dashboard
+      </a>
+      <a href="/projects" class="nav-item" id="nav-projects">
+        <span class="nav-icon">◈</span> Projects
+        <span class="nav-badge" id="badge-projects">—</span>
+      </a>
+      <a href="/tasks" class="nav-item" id="nav-tasks">
+        <span class="nav-icon">✓</span> Tasks
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item" id="nav-chat">
+        <span class="nav-icon">◎</span> Chat with Hermes
+      </a>
+      <a href="/activities" class="nav-item" id="nav-activities">
+        <span class="nav-icon">◉</span> Activities
+      </a>
+      <a href="/emails" class="nav-item" id="nav-emails">
+        <span class="nav-icon">✉</span> Emails
+        <span class="nav-badge" id="badge-emails">—</span>
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item" id="nav-graph">
+        <span class="nav-icon">◌</span> Knowledge Graph
+      </a>
+      <a href="/people" class="nav-item" id="nav-people">
+        <span class="nav-icon">◯</span> People
+      </a>
+      <a href="/reports" class="nav-item" id="nav-reports">
+        <span class="nav-icon">≡</span> Reports
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">System</div>
+      <a href="/tools" class="nav-item" id="nav-tools">
+        <span class="nav-icon">⚙</span> Tools
+        <span class="nav-badge badge-ai" id="badge-tools">—</span>
+      </a>
+    </div>
+
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot" id="status-dot"></div>
+        <span id="status-label">Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ── -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title" id="greeting">Good evening ✦</h1>
+        <p class="page-subtitle" id="subtitle">Here's what's happening across your world</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" id="btn-refresh" onclick="loadDashboard()">↺ Refresh</button>
+        <a href="/chat" class="btn btn-primary btn-sm">◎ Ask Hermes</a>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- Quick Ask -->
+      <div class="quick-ask animate-fade-up">
+        <div class="quick-ask-label">⚡ Ask Hermes anything</div>
+        <div class="quick-ask-row">
+          <input
+            type="text"
+            class="quick-ask-input"
+            id="quick-input"
+            placeholder="What's the status of my projects? Draft a reply to John..."
+            autocomplete="off"
+          />
+          <button class="btn btn-primary" id="quick-send-btn" onclick="quickAsk()">Ask</button>
+        </div>
+        <div class="suggestions">
+          <span class="suggestion-chip" onclick="setQuick('What are my open tasks?')">Open tasks</span>
+          <span class="suggestion-chip" onclick="setQuick('Summarize this week\'s activities')">This week</span>
+          <span class="suggestion-chip" onclick="setQuick('What projects need attention?')">Needs attention</span>
+          <span class="suggestion-chip" onclick="setQuick('Who should I follow up with?')">Follow-ups</span>
+        </div>
+        <div class="hermes-response" id="quick-response"></div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="stat-grid stagger-children animate-fade-up" id="stat-grid">
+        <div class="stat-card animate-fade-up">
+          <div class="stat-label">Active Projects</div>
+          <div class="stat-value" id="stat-projects">—</div>
+          <div class="stat-delta" id="stat-projects-delta">Loading...</div>
+        </div>
+        <div class="stat-card animate-fade-up">
+          <div class="stat-label">Open Tasks</div>
+          <div class="stat-value" id="stat-tasks">—</div>
+          <div class="stat-delta" id="stat-tasks-delta">Loading...</div>
+        </div>
+        <div class="stat-card animate-fade-up">
+          <div class="stat-label">Entities in Graph</div>
+          <div class="stat-value" id="stat-entities">—</div>
+          <div class="stat-delta" id="stat-entities-delta">Loading...</div>
+        </div>
+        <div class="stat-card animate-fade-up">
+          <div class="stat-label">Emails Processed</div>
+          <div class="stat-value" id="stat-emails">—</div>
+          <div class="stat-delta">by Hermes</div>
+        </div>
+      </div>
+
+      <!-- Main grid -->
+      <div class="dashboard-grid">
+
+        <!-- Left: Projects + AI signals -->
+        <div>
+          <div class="section-header">
+            <div class="section-title">Projects</div>
+            <a href="/projects" class="btn btn-ghost btn-sm">View all →</a>
+          </div>
+
+          <div class="projects-grid stagger-children" id="projects-grid">
+            <!-- Skeleton loaders -->
+            <div class="project-card">
+              <div class="skeleton" style="height:16px; width:60%; margin-bottom:10px;"></div>
+              <div class="skeleton" style="height:12px; width:90%; margin-bottom:6px;"></div>
+              <div class="skeleton" style="height:12px; width:70%;"></div>
+            </div>
+            <div class="project-card">
+              <div class="skeleton" style="height:16px; width:50%; margin-bottom:10px;"></div>
+              <div class="skeleton" style="height:12px; width:80%; margin-bottom:6px;"></div>
+              <div class="skeleton" style="height:12px; width:60%;"></div>
+            </div>
+          </div>
+
+          <!-- AI-detected new projects -->
+          <div id="ai-signals-section" style="display:none;">
+            <div class="section-header" style="margin-top:24px;">
+              <div class="section-title">🤖 AI Detected</div>
+              <span class="badge badge-ai">Review</span>
+            </div>
+            <div id="ai-signals"></div>
+          </div>
+        </div>
+
+        <!-- Right: Activity feed -->
+        <div class="sidebar-panel">
+          <div class="card">
+            <div class="section-header">
+              <div class="section-title">Recent Activity</div>
+              <a href="/activities" class="btn btn-ghost btn-sm">All →</a>
+            </div>
+            <div id="activity-feed">
+              <div class="activity-item">
+                <div class="activity-dot skeleton" style="border-radius:50%;"></div>
+                <div class="activity-content">
+                  <div class="skeleton" style="height:14px; width:90%; margin-bottom:6px;"></div>
+                  <div class="skeleton" style="height:11px; width:50%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <div class="section-title">Memory Graph</div>
+            </div>
+            <div style="text-align:center; padding:20px 0; color: var(--text-muted); font-size:13px;">
+              <div style="font-size:32px; margin-bottom:8px;">◌</div>
+              <div id="graph-summary">Loading knowledge graph...</div>
+              <a href="/graph" class="btn btn-secondary btn-sm" style="margin-top:12px;">Explore Graph →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  // ── Greeting ────────────────────────────────────────────────
+  const hour = new Date().getHours();
+  const greetings = {
+    morning:   'Good morning ✦',
+    afternoon: 'Good afternoon ✦',
+    evening:   'Good evening ✦',
+    night:     'Late night ✦',
+  };
+  const key = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+  document.getElementById('greeting').textContent = greetings[key];
+
+  // ── Quick Ask ────────────────────────────────────────────────
+  const chat = new HermesChat();
+  chat.connect();
+
+  let quickRunId = null;
+
+  function setQuick(text) {
+    document.getElementById('quick-input').value = text;
+    quickAsk();
+  }
+
+  async function quickAsk() {
+    const input = document.getElementById('quick-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    const responseEl = document.getElementById('quick-response');
+    responseEl.style.display = 'block';
+    responseEl.textContent = '';
+    responseEl.classList.add('cursor-blink');
+
+    const btn = document.getElementById('quick-send-btn');
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    chat.onToken = (tok) => { responseEl.textContent += tok; };
+    chat.onDone  = (meta) => {
+      responseEl.classList.remove('cursor-blink');
+      quickRunId = meta.run_id;
+      btn.disabled = false;
+      btn.textContent = 'Ask';
+    };
+    chat.onError = (err) => {
+      responseEl.textContent = `Error: ${err}`;
+      responseEl.classList.remove('cursor-blink');
+      btn.disabled = false;
+      btn.textContent = 'Ask';
+    };
+
+    chat.send(msg);
+    input.value = '';
+  }
+
+  document.getElementById('quick-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); quickAsk(); }
+  });
+
+  // ── Dashboard Data ────────────────────────────────────────────
+  async function loadDashboard() {
+    try {
+      const health = await HermesAPI.get('/api/health');
+      const statusDot = document.getElementById('status-dot');
+      const statusLabel = document.getElementById('status-label');
+      if (health.llm_loaded) {
+        statusDot.style.background = 'var(--status-active)';
+        statusLabel.textContent = 'Hermes online';
+      } else {
+        statusDot.style.background = 'var(--status-paused)';
+        statusLabel.textContent = 'LLM loading...';
+      }
+    } catch (e) {
+      document.getElementById('status-dot').style.background = 'var(--status-blocked)';
+      document.getElementById('status-label').textContent = 'Hermes offline';
+    }
+
+    // Load stats (will be wired to real API in Phase 3)
+    loadMockData();
+  }
+
+  function loadMockData() {
+    // Placeholder stats — will be replaced by real API calls in Phase 3
+    document.getElementById('stat-projects').textContent = '0';
+    document.getElementById('stat-projects-delta').textContent = '+ Add your first project';
+    document.getElementById('stat-tasks').textContent = '0';
+    document.getElementById('stat-tasks-delta').textContent = 'No open tasks';
+    document.getElementById('stat-entities').textContent = '0';
+    document.getElementById('stat-entities-delta').textContent = 'Graph empty — start chatting!';
+    document.getElementById('stat-emails').textContent = '0';
+    document.getElementById('badge-projects').textContent = '0';
+    document.getElementById('badge-emails').textContent = '0';
+    document.getElementById('badge-tools').textContent = '0';
+
+    // Empty state for projects
+    document.getElementById('projects-grid').innerHTML = `
+      <div class="project-card" style="border-style:dashed; cursor:default; text-align:center; padding:32px 20px;">
+        <div style="font-size:32px; margin-bottom:10px;">◈</div>
+        <div style="font-size:14px; color:var(--text-secondary); margin-bottom:12px;">No projects yet</div>
+        <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
+          Ask Hermes to create one, or Hermes will auto-detect projects from your emails.
+        </div>
+        <a href="/chat" class="btn btn-primary btn-sm">Talk to Hermes</a>
+      </div>
+    `;
+
+    // Empty activity feed
+    document.getElementById('activity-feed').innerHTML = `
+      <div style="text-align:center; padding:20px 0; color:var(--text-muted); font-size:13px;">
+        <div style="font-size:24px; margin-bottom:8px;">◉</div>
+        No activity yet.<br/>Record your first note or import emails.
+      </div>
+    `;
+
+    document.getElementById('graph-summary').textContent = '0 entities · 0 relations';
+  }
+
+  // Init
+  loadDashboard();
+  setInterval(loadDashboard, 30000); // refresh every 30s
+</script>
+</body>
+</html>

@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat — ARIA / Hermes</title>
+  <meta name="description" content="Talk to Hermes — your personal AI assistant." />
+  <link rel="stylesheet" href="/assets/css/main.css" />
+  <style>
+    /* ── Chat-specific layout ── */
+    body { overflow: hidden; }
+
+    .chat-layout {
+      display: flex;
+      height: 100vh;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Chat main area ── */
+    .chat-main {
+      margin-left: var(--nav-width);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Chat header ── */
+    .chat-header {
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      flex-shrink: 0;
+    }
+
+    .chat-header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .hermes-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: var(--shadow-glow);
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .hermes-avatar-dot {
+      position: absolute;
+      bottom: -2px; right: -2px;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--status-active);
+      border: 2px solid var(--bg-base);
+    }
+
+    .chat-header-info h2 {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .chat-header-info p {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .chat-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Messages area ── */
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      scroll-behavior: smooth;
+    }
+
+    /* ── Message bubbles ── */
+    .message {
+      display: flex;
+      gap: 14px;
+      max-width: 840px;
+      animation: fadeUp 0.3s ease both;
+    }
+
+    .message.user {
+      flex-direction: row-reverse;
+      align-self: flex-end;
+    }
+
+    .message-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    .message.hermes .message-avatar {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .message.user .message-avatar {
+      background: var(--bg-raised);
+      border: 1px solid var(--border-glass);
+    }
+
+    .message-body { flex: 1; min-width: 0; }
+
+    .message-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-family: var(--font-mono);
+    }
+
+    .message.user .message-meta { text-align: right; }
+
+    .message-bubble {
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      line-height: 1.7;
+      position: relative;
+    }
+
+    .message.hermes .message-bubble {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md) var(--radius-md) var(--radius-md) 4px;
+      color: var(--text-primary);
+    }
+
+    .message.user .message-bubble {
+      background: linear-gradient(135deg, rgba(124,58,237,0.25), rgba(124,58,237,0.15));
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-md) var(--radius-md) 4px var(--radius-md);
+      color: var(--text-primary);
+    }
+
+    .message-bubble p { margin-bottom: 8px; }
+    .message-bubble p:last-child { margin-bottom: 0; }
+    .message-bubble code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(255,255,255,0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .message-bubble pre {
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      overflow-x: auto;
+      margin: 10px 0;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent-secondary);
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 14px 18px;
+    }
+
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      animation: typingBounce 1.2s ease-in-out infinite;
+    }
+
+    .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.30s; }
+
+    @keyframes typingBounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30%            { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* Feedback buttons */
+    .message-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+    }
+
+    .message:hover .message-actions { opacity: 1; }
+
+    .action-btn {
+      background: var(--bg-overlay);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .action-btn:hover { border-color: var(--border-accent); color: var(--text-accent); }
+    .action-btn.liked { color: var(--status-active); border-color: var(--status-active); }
+    .action-btn.disliked { color: var(--status-blocked); border-color: var(--status-blocked); }
+
+    /* Steps counter */
+    .steps-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--bg-overlay);
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+
+    /* ── Chat input area ── */
+    .chat-input-area {
+      padding: 20px 32px 24px;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      flex-shrink: 0;
+    }
+
+    .input-container {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 12px 14px;
+      transition: all var(--transition-fast);
+    }
+
+    .input-container:focus-within {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    #chat-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      font-family: var(--font-body);
+      color: var(--text-primary);
+      resize: none;
+      max-height: 150px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+
+    #chat-input::placeholder { color: var(--text-muted); }
+
+    .input-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .voice-btn {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      background: var(--bg-overlay);
+      border: 1px solid var(--border-glass);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all var(--transition-fast);
+      color: var(--text-muted);
+    }
+
+    .voice-btn:hover { border-color: var(--border-accent); color: var(--text-accent); }
+    .voice-btn.recording {
+      background: rgba(239,68,68,0.2);
+      border-color: var(--status-blocked);
+      color: var(--status-blocked);
+      animation: recordPulse 1s ease-in-out infinite;
+    }
+
+    @keyframes recordPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50%       { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+    }
+
+    .send-btn {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent-primary), #6d28d9);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      color: white;
+      transition: all var(--transition-fast);
+      box-shadow: 0 2px 10px rgba(124,58,237,0.4);
+    }
+
+    .send-btn:hover:not(:disabled) {
+      box-shadow: 0 4px 20px rgba(124,58,237,0.6);
+      transform: scale(1.05);
+    }
+
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .input-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ── Welcome screen ── */
+    .welcome-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .welcome-icon {
+      width: 72px; height: 72px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-glow);
+      animation: welcomePulse 3s ease-in-out infinite;
+    }
+
+    @keyframes welcomePulse {
+      0%, 100% { box-shadow: 0 0 30px rgba(124,58,237,0.3); }
+      50%       { box-shadow: 0 0 60px rgba(124,58,237,0.6); }
+    }
+
+    .welcome-title {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    .welcome-sub {
+      font-size: 15px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 480px;
+      margin-bottom: 32px;
+    }
+
+    .starter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      max-width: 500px;
+      width: 100%;
+    }
+
+    .starter-card {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: all var(--transition-base);
+    }
+
+    .starter-card:hover {
+      border-color: var(--border-accent);
+      background: rgba(124,58,237,0.08);
+    }
+
+    .starter-card-icon { font-size: 20px; margin-bottom: 6px; }
+    .starter-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+    .starter-card-desc  { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+  </style>
+</head>
+<body>
+<div class="chat-layout">
+
+  <!-- ── Navigation Sidebar ── -->
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item" id="nav-dashboard"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item active"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">System</div>
+      <a href="/tools" class="nav-item"><span class="nav-icon">⚙</span> Tools</a>
+    </div>
+
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot" id="status-dot"></div>
+        <span id="status-label">Connecting...</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Chat Main ── -->
+  <main class="chat-main">
+
+    <!-- Header -->
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <div class="hermes-avatar">
+          ⚡
+          <div class="hermes-avatar-dot" id="avatar-dot"></div>
+        </div>
+        <div class="chat-header-info">
+          <h2>Hermes</h2>
+          <p id="hermes-status-text">Initializing...</p>
+        </div>
+      </div>
+      <div class="chat-controls">
+        <button class="btn btn-ghost btn-sm" onclick="clearChat()" title="Clear conversation">✕ Clear</button>
+        <button class="btn btn-secondary btn-sm" onclick="newSession()" title="New session">↺ New Session</button>
+      </div>
+    </div>
+
+    <!-- Messages or welcome screen -->
+    <div id="messages-area" class="messages-area">
+      <!-- Welcome screen shown when no messages -->
+      <div class="welcome-screen" id="welcome-screen">
+        <div class="welcome-icon">⚡</div>
+        <h2 class="welcome-title">Hello, I'm Hermes</h2>
+        <p class="welcome-sub">
+          Your personal AI assistant. I know your projects, read your emails,
+          track your activities, and grow smarter with every conversation.
+        </p>
+        <div class="starter-grid">
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What projects are active right now?">
+            <div class="starter-card-icon">◈</div>
+            <div class="starter-card-title">Project Status</div>
+            <div class="starter-card-desc">See all active projects and progress</div>
+          </div>
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What are my open tasks this week?">
+            <div class="starter-card-icon">✓</div>
+            <div class="starter-card-title">Open Tasks</div>
+            <div class="starter-card-desc">Review and prioritize your task list</div>
+          </div>
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="Summarize my recent emails and extract any action items">
+            <div class="starter-card-icon">✉</div>
+            <div class="starter-card-title">Email Digest</div>
+            <div class="starter-card-desc">Summarize emails and action items</div>
+          </div>
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="Generate a weekly report for this week">
+            <div class="starter-card-icon">≡</div>
+            <div class="starter-card-title">Weekly Report</div>
+            <div class="starter-card-desc">Synthesize everything from this week</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="chat-input-area">
+      <div class="input-container">
+        <textarea
+          id="chat-input"
+          rows="1"
+          placeholder="Ask Hermes anything — it knows your world..."
+          autocomplete="off"
+        ></textarea>
+        <div class="input-actions">
+          <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Voice input">🎙</button>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send (Enter)">➤</button>
+        </div>
+      </div>
+      <div class="input-hint">
+        <span>Enter to send · Shift+Enter for new line</span>
+        <span id="session-id-display" class="font-mono" style="font-size:10px; color:var(--text-muted);"></span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  // ── State ─────────────────────────────────────────────────────
+  const chat = new HermesChat();
+  const voice = new VoiceInput();
+  let isStreaming = false;
+  let currentMessageEl = null;
+  let currentRunId = null;
+
+  // ── Init ──────────────────────────────────────────────────────
+  chat.connect();
+  chat.onAck = (sid) => {
+    document.getElementById('session-id-display').textContent = `session: ${sid.slice(0, 8)}`;
+  };
+  chat.onToken = (tok) => {
+    if (currentMessageEl) {
+      // Remove typing indicator if still present
+      const typing = currentMessageEl.querySelector('.typing-indicator');
+      if (typing) typing.remove();
+      // Append token
+      let textNode = currentMessageEl.querySelector('.bubble-text');
+      if (!textNode) {
+        textNode = document.createElement('span');
+        textNode.className = 'bubble-text';
+        currentMessageEl.appendChild(textNode);
+      }
+      textNode.textContent += tok;
+      scrollToBottom();
+    }
+  };
+
+  chat.onDone = (meta) => {
+    currentRunId = meta.run_id;
+    isStreaming = false;
+    document.getElementById('send-btn').disabled = false;
+    // Add feedback actions
+    if (currentMessageEl) {
+      const msgEl = currentMessageEl.closest('.message');
+      if (msgEl) {
+        const actions = msgEl.querySelector('.message-actions');
+        if (actions && meta.run_id) {
+          actions.innerHTML = `
+            <button class="action-btn" id="like-${meta.run_id}" onclick="feedback('${meta.run_id}', 5, this)">👍</button>
+            <button class="action-btn" id="dislike-${meta.run_id}" onclick="feedback('${meta.run_id}', 1, this)">👎</button>
+            <span class="steps-badge">${meta.steps} steps · ${meta.duration_ms}ms</span>
+          `;
+        }
+      }
+    }
+    updateStatus('ready', 'Ready');
+  };
+
+  chat.onError = (err) => {
+    if (currentMessageEl) {
+      currentMessageEl.innerHTML = `<span style="color:var(--status-blocked)">Error: ${err}</span>`;
+    }
+    isStreaming = false;
+    document.getElementById('send-btn').disabled = false;
+    updateStatus('error', 'Error occurred');
+  };
+
+  // ── Health check ──────────────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const h = await HermesAPI.get('/api/health');
+      if (h.llm_loaded) {
+        updateStatus('ready', 'Ready · LLM loaded');
+      } else {
+        updateStatus('loading', 'Loading LLM...');
+        setTimeout(checkHealth, 5000);
+      }
+    } catch (e) {
+      updateStatus('error', 'Offline');
+    }
+  }
+
+  function updateStatus(state, text) {
+    const dot = document.getElementById('status-dot');
+    const avatarDot = document.getElementById('avatar-dot');
+    const statusText = document.getElementById('hermes-status-text');
+    const colors = { ready: 'var(--status-active)', loading: 'var(--status-paused)', error: 'var(--status-blocked)' };
+    dot.style.background = colors[state] || colors.loading;
+    avatarDot.style.background = colors[state] || colors.loading;
+    statusText.textContent = text;
+    document.getElementById('status-label').textContent = state === 'ready' ? 'Hermes online' : text;
+  }
+
+  checkHealth();
+
+  // ── Message rendering ─────────────────────────────────────────
+  function addMessage(role, content, meta = {}) {
+    const welcome = document.getElementById('welcome-screen');
+    if (welcome) welcome.remove();
+
+    const area = document.getElementById('messages-area');
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const msgEl = document.createElement('div');
+    msgEl.className = `message ${role} animate-fade-up`;
+
+    const avatarIcon = role === 'hermes' ? '⚡' : '👤';
+    msgEl.innerHTML = `
+      <div class="message-avatar">${avatarIcon}</div>
+      <div class="message-body">
+        <div class="message-meta">${role === 'hermes' ? 'Hermes' : 'You'} · ${now}</div>
+        <div class="message-bubble" id="bubble-${Date.now()}">
+          ${content ? `<span class="bubble-text">${content}</span>` : ''}
+        </div>
+        <div class="message-actions"></div>
+      </div>
+    `;
+
+    area.appendChild(msgEl);
+    scrollToBottom();
+    return msgEl.querySelector('.message-bubble');
+  }
+
+  function addTypingIndicator() {
+    return addMessage('hermes', '');
+  }
+
+  function scrollToBottom() {
+    const area = document.getElementById('messages-area');
+    area.scrollTop = area.scrollHeight;
+  }
+
+  // ── Send message ──────────────────────────────────────────────
+  function sendMessage() {
+    if (isStreaming) return;
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    doSend(text);
+    input.value = '';
+    autoResize(input);
+  }
+
+  function sendStarter(msg) {
+    doSend(msg);
+  }
+
+  function doSend(text) {
+    if (isStreaming) return;
+    isStreaming = true;
+    document.getElementById('send-btn').disabled = true;
+
+    // Add user message
+    addMessage('user', escapeHtml(text));
+
+    // Add hermes typing bubble
+    currentMessageEl = addTypingIndicator();
+    currentMessageEl.innerHTML = `
+      <div class="typing-indicator">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    `;
+    updateStatus('loading', 'Thinking...');
+
+    chat.send(text);
+  }
+
+  // ── Voice input ───────────────────────────────────────────────
+  let voiceRecording = false;
+
+  async function toggleVoice() {
+    const btn = document.getElementById('voice-btn');
+    if (!voiceRecording) {
+      try {
+        await voice.start();
+        voiceRecording = true;
+        btn.classList.add('recording');
+        btn.title = 'Stop recording';
+        updateStatus('loading', 'Recording...');
+      } catch (e) {
+        alert('Microphone access denied.');
+      }
+    } else {
+      btn.classList.remove('recording');
+      btn.title = 'Voice input';
+      voiceRecording = false;
+      updateStatus('loading', 'Transcribing...');
+      const transcript = await voice.stop();
+      if (transcript) {
+        document.getElementById('chat-input').value = transcript;
+        sendMessage();
+      } else {
+        updateStatus('ready', 'Ready');
+      }
+    }
+  }
+
+  // ── Feedback ──────────────────────────────────────────────────
+  async function feedback(runId, rating, btn) {
+    await chat.sendFeedback(runId, rating);
+    const likeBtn = document.getElementById(`like-${runId}`);
+    const dislikeBtn = document.getElementById(`dislike-${runId}`);
+    if (likeBtn) likeBtn.classList.remove('liked');
+    if (dislikeBtn) dislikeBtn.classList.remove('disliked');
+    btn.classList.add(rating >= 4 ? 'liked' : 'disliked');
+  }
+
+  // ── Session management ────────────────────────────────────────
+  function clearChat() {
+    document.getElementById('messages-area').innerHTML = `
+      <div class="welcome-screen" id="welcome-screen">
+        <div class="welcome-icon">⚡</div>
+        <h2 class="welcome-title">Hello, I'm Hermes</h2>
+        <p class="welcome-sub">Your personal AI assistant. Ask me anything about your projects, emails, and activities.</p>
+        <div class="starter-grid">
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What projects are active right now?">
+            <div class="starter-card-icon">◈</div>
+            <div class="starter-card-title">Project Status</div>
+            <div class="starter-card-desc">See all active projects and progress</div>
+          </div>
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What are my open tasks this week?">
+            <div class="starter-card-icon">✓</div>
+            <div class="starter-card-title">Open Tasks</div>
+            <div class="starter-card-desc">Review and prioritize your task list</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function newSession() {
+    chat.sessionId = null;
+    localStorage.removeItem('hermes_session_id');
+    clearChat();
+    document.getElementById('session-id-display').textContent = '';
+  }
+
+  // ── Utils ─────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+  }
+
+  // ── Keyboard shortcuts ────────────────────────────────────────
+  const chatInput = document.getElementById('chat-input');
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  chatInput.addEventListener('input', () => autoResize(chatInput));
+</script>
+</body>
+</html>

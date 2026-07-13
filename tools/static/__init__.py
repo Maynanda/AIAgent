@@ -1,0 +1,1 @@
+"""Static tools package."""
