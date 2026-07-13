@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tasks — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <style>
+    .tasks-grid {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 24px;
+    }
+    .filter-panel {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- Sidebar Nav -->
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item active"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Tasks Portal -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Tasks & Actions</h1>
+        <p class="page-subtitle">Track, filter, and prioritize your action items across all projects</p>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="showCreateTaskModal()">+ Add Task</button>
+    </div>
+
+    <div class="page-body">
+      <div class="filter-panel">
+        <select id="filter-status" class="input" style="width: 160px;" onchange="loadTasks()">
+          <option value="">All Statuses</option>
+          <option value="todo">To Do</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+        </select>
+        <select id="filter-project" class="input" style="width: 200px;" onchange="loadTasks()">
+          <option value="">All Projects</option>
+        </select>
+      </div>
+
+      <div class="tasks-grid">
+        <!-- Tasks Table/List -->
+        <div class="card">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Task Details</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Due Date</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="tasks-table-body">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading tasks...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Task Summary & Meta -->
+        <div class="card" style="height: fit-content;">
+          <h3 style="font-family: var(--font-display); font-size: 16px; margin-bottom: 14px;">Task Metrics</h3>
+          <div style="display: flex; flex-direction: column; gap: 12px; font-size: 14px;">
+            <div class="flex justify-between">
+              <span class="text-muted">Total Pending</span>
+              <span id="metric-pending" class="font-mono">0</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-muted">Completed (7d)</span>
+              <span id="metric-completed" class="font-mono">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: Create Task -->
+<div class="modal-overlay" id="create-task-modal">
+  <div class="modal-card">
+    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:16px;">Create New Task</h3>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Task Title</span>
+        <input type="text" id="new-task-title" class="input" placeholder="e.g. Design database schema">
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Description</span>
+        <textarea id="new-task-desc" class="input" placeholder="Additional task context..."></textarea>
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Priority</span>
+        <select id="new-task-priority" class="input">
+          <option value="1">1 - Critical</option>
+          <option value="2">2 - High</option>
+          <option value="3" selected>3 - Medium</option>
+          <option value="4">4 - Low</option>
+        </select>
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Project Link</span>
+        <select id="new-task-project" class="input">
+          <option value="">None (Independent)</option>
+        </select>
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Due Date</span>
+        <input type="date" id="new-task-due" class="input">
+      </label>
+      <div class="flex gap-2 justify-between mt-4">
+        <button class="btn btn-secondary" onclick="hideModal('create-task-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCreateTask()">Add Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  async function initPage() {
+    await loadProjectsDropdown();
+    await loadTasks();
+  }
+
+  async function loadProjectsDropdown() {
+    try {
+      const projects = await HermesAPI.get('/api/projects');
+      const filterProj = document.getElementById('filter-project');
+      const createProj = document.getElementById('new-task-project');
+      
+      projects.forEach(p => {
+        const opt1 = new Option(p.title, p.id);
+        const opt2 = new Option(p.title, p.id);
+        filterProj.add(opt1);
+        createProj.add(opt2);
+      });
+    } catch (e) {
+      console.error("Failed to load project choices", e);
+    }
+  }
+
+  async function loadTasks() {
+    const status = document.getElementById('filter-status').value;
+    const projectId = document.getElementById('filter-project').value;
+    
+    let url = '/api/tasks';
+    const params = [];
+    if (status) params.push(`status=${status}`);
+    if (projectId) params.push(`project_id=${projectId}`);
+    if (params.length > 0) url += `?${params.join('&')}`;
+
+    try {
+      const tasks = await HermesAPI.get(url);
+      const tbody = document.getElementById('tasks-table-body');
+      tbody.innerHTML = '';
+
+      if (tasks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No tasks found.</td></tr>';
+        return;
+      }
+
+      let pending = 0;
+      let completed = 0;
+
+      tasks.forEach(t => {
+        if (t.status === 'done') completed++;
+        else pending++;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>
+            <div style="font-weight: 600; color: var(--text-primary);">${t.title}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${t.description || ''}</div>
+          </td>
+          <td>${HermesUtils.statusBadge(t.status)}</td>
+          <td>${HermesUtils.priorityLabel(t.priority)}</td>
+          <td>${HermesUtils.formatDate(t.due_date)}</td>
+          <td style="text-align: right;">
+            ${t.status !== 'done' ? `<button class="btn btn-secondary btn-sm" onclick="completeTask('${t.id}')" style="padding: 4px 8px; font-size: 11px;">✓ Complete</button>` : ''}
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('metric-pending').textContent = pending;
+      document.getElementById('metric-completed').textContent = completed;
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function completeTask(id) {
+    try {
+      await HermesAPI.patch(`/api/tasks/${id}`, { status: 'done' });
+      loadTasks();
+    } catch (e) {
+      alert("Failed to complete task");
+    }
+  }
+
+  function showCreateTaskModal() {
+    document.getElementById('create-task-modal').style.display = 'flex';
+  }
+
+  function hideModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  async function submitCreateTask() {
+    const title = document.getElementById('new-task-title').value.trim();
+    const description = document.getElementById('new-task-desc').value.trim();
+    const priority = parseInt(document.getElementById('new-task-priority').value);
+    const project_id = document.getElementById('new-task-project').value;
+    const due_date = document.getElementById('new-task-due').value;
+
+    if (!title) return alert("Task title is required");
+
+    try {
+      await HermesAPI.post('/api/tasks', {
+        title,
+        description,
+        priority,
+        project_id: project_id || null,
+        due_date: due_date || null
+      });
+      hideModal('create-task-modal');
+      loadTasks();
+    } catch (e) {
+      alert("Error creating task");
+    }
+  }
+
+  initPage();
+</script>
+</body>
+</html>

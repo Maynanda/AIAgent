@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>People & Contacts — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <style>
+    .people-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .profile-card {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      position: relative;
+      transition: all var(--transition-base);
+    }
+    .profile-card:hover {
+      border-color: var(--border-accent);
+      box-shadow: var(--shadow-glow);
+    }
+    .profile-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: white;
+      margin-bottom: 12px;
+    }
+    .profile-name {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+    .profile-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- Sidebar Nav -->
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item active"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main People Portal -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">People & Contacts</h1>
+        <p class="page-subtitle">Manage relations, companies, and contacts detected in your communications</p>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="showCreateContactModal()">+ Add Contact</button>
+    </div>
+
+    <div class="page-body">
+      <div class="people-grid" id="people-list">
+        <div style="text-align: center; color: var(--text-muted); padding: 40px; grid-column: 1 / -1;">
+          Loading contacts...
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: Create Contact -->
+<div class="modal-overlay" id="create-contact-modal">
+  <div class="modal-card">
+    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:16px;">Create New Contact</h3>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Full Name</span>
+        <input type="text" id="new-contact-name" class="input" placeholder="e.g. John Doe">
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Description / Role</span>
+        <textarea id="new-contact-desc" class="input" placeholder="e.g. Lead Software Engineer at ACME Corp"></textarea>
+      </label>
+      <div class="flex gap-2 justify-between mt-4">
+        <button class="btn btn-secondary" onclick="hideModal('create-contact-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCreateContact()">Add Contact</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  async function loadPeople() {
+    try {
+      const entities = await HermesAPI.get('/api/knowledge/entities?type=person');
+      const container = document.getElementById('people-list');
+      container.innerHTML = '';
+
+      if (entities.length === 0) {
+        container.innerHTML = `
+          <div class="card" style="text-align:center; padding:40px; grid-column: 1 / -1;">
+            No contacts recorded yet. They are automatically added from your incoming emails.
+          </div>
+        `;
+        return;
+      }
+
+      entities.forEach(p => {
+        const initials = p.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        const card = document.createElement('div');
+        card.className = 'profile-card animate-fade-up';
+        card.innerHTML = `
+          <div class="profile-avatar">${initials}</div>
+          <div class="profile-name">${p.name}</div>
+          <div class="profile-meta">Importance score: ${(p.importance * 100).toFixed(0)}%</div>
+          <div style="font-size:13px; color:var(--text-secondary); line-height:1.5;">
+            ${p.description || 'No role or description logged.'}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function showCreateContactModal() {
+    document.getElementById('create-contact-modal').style.display = 'flex';
+  }
+
+  function hideModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  async function submitCreateContact() {
+    const name = document.getElementById('new-contact-name').value.trim();
+    const description = document.getElementById('new-contact-desc').value.trim();
+
+    if (!name) return alert("Name is required");
+
+    try {
+      await HermesAPI.post('/api/knowledge/entities', {
+        name,
+        description,
+        type: 'person',
+        importance: 0.5
+      });
+      hideModal('create-contact-modal');
+      loadPeople();
+    } catch (e) {
+      alert("Error adding contact");
+    }
+  }
+
+  loadPeople();
+</script>
+</body>
+</html>

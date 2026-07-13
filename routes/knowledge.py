@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 
+@router.get("/entities")
+async def list_entities(
+    type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List all entities, optionally filtered by type."""
+    stmt = select(Entity)
+    if type:
+        stmt = stmt.where(Entity.type == type)
+    res = await db.execute(stmt)
+    entities = res.scalars().all()
+    return [e.to_dict() for e in entities]
+
+
 @router.get("/graph")
 async def get_graph_data(
     min_weight: float = 0.0,
