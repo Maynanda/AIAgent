@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tools & Sandbox — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <style>
+    .tools-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .tool-item-card {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all var(--transition-base);
+    }
+    .tool-item-card:hover {
+      border-color: var(--border-accent);
+      box-shadow: var(--shadow-glow);
+    }
+    .tool-title {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tool-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- Sidebar Nav -->
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Tools Portal -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Agent Tool Registry</h1>
+        <p class="page-subtitle">Inspect built-in capabilities and hot-loaded agent-created dynamic tools</p>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="tools-list" id="tools-list-container">
+        <div style="text-align: center; color: var(--text-muted); padding: 40px;">
+          Loading tools...
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  async function loadTools() {
+    try {
+      const tools = await HermesAPI.get('/api/tools');
+      const container = document.getElementById('tools-list-container');
+      container.innerHTML = '';
+
+      if (tools.length === 0) {
+        container.innerHTML = '<div class="card" style="text-align:center; padding:40px;">No tools registered.</div>';
+        return;
+      }
+
+      tools.forEach(t => {
+        const card = document.createElement('div');
+        card.className = 'tool-item-card animate-fade-up';
+        
+        const badgeClass = t.category === 'dynamic' ? 'badge-ai' : 'badge-active';
+        
+        card.innerHTML = `
+          <div>
+            <div class="tool-title">
+              ${t.name}
+              <span class="badge ${badgeClass}">${t.category}</span>
+            </div>
+            <div class="tool-desc">${t.description || 'No description provided.'}</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:6px; font-family:var(--font-mono);">
+              Author: ${t.created_by || 'system'}
+            </div>
+          </div>
+          <div>
+            <button class="btn ${t.is_active ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="toggleToolStatus('${t.id}')">
+              ${t.is_active ? 'Disable' : 'Enable'}
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function toggleToolStatus(id) {
+    try {
+      await HermesAPI.patch(`/api/tools/${id}/toggle`);
+      loadTools();
+    } catch (e) {
+      alert("Failed to toggle tool status");
+    }
+  }
+
+  loadTools();
+</script>
+</body>
+</html>
