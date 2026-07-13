@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Projects — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <style>
+    /* ── Projects Board Layout ── */
+    .projects-container {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 24px;
+      height: calc(100vh - 140px);
+    }
+
+    /* Left Sidebar: Projects List */
+    .projects-sidebar {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    .project-list-item {
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--bg-overlay);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .project-list-item:hover {
+      border-color: var(--border-subtle);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .project-list-item.active {
+      border-color: var(--border-accent);
+      background: rgba(124,58,237,0.12);
+    }
+
+    .project-list-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .project-list-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Right Panel: Selected Project Kanban Board */
+    .board-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      height: 100%;
+    }
+
+    .board-header {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .board-columns {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .board-column {
+      background: rgba(7, 7, 17, 0.5);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 100%;
+      overflow-y: auto;
+    }
+
+    .column-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .column-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+    }
+
+    .column-count {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      background: var(--bg-overlay);
+      border-radius: 99px;
+      padding: 2px 8px;
+      color: var(--text-muted);
+    }
+
+    /* Kanban Card */
+    .kanban-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      cursor: grab;
+      transition: all var(--transition-fast);
+      position: relative;
+    }
+
+    .kanban-card:hover {
+      border-color: var(--border-accent);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .kanban-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+
+    .kanban-card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .kanban-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+
+    /* Modals Overlay */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      width: 480px;
+      padding: 24px;
+      box-shadow: var(--shadow-glow);
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- Sidebar Nav -->
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item active"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Projects Portal -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Project Board</h1>
+        <p class="page-subtitle">Coordinate milestones, track progress, and view timelines</p>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="showCreateProjectModal()">+ New Project</button>
+    </div>
+
+    <div class="page-body">
+      <div class="projects-container">
+        
+        <!-- Left: List of projects -->
+        <div class="projects-sidebar" id="project-list">
+          <div style="text-align:center; padding:20px; color:var(--text-muted);">Loading projects...</div>
+        </div>
+
+        <!-- Right: Current active project board -->
+        <div class="board-panel" id="board-panel" style="display:none;">
+          
+          <!-- Board header/status -->
+          <div class="board-header">
+            <div>
+              <h2 id="current-project-title" style="font-family:var(--font-display); font-size:20px; margin-bottom:4px;">Hermes System</h2>
+              <p id="current-project-desc" style="font-size:13px; color:var(--text-secondary);">Building workspace modules</p>
+              <div class="flex items-center gap-3 mt-2">
+                <span id="current-project-status"></span>
+                <span style="font-size:12px; color:var(--text-muted);" id="current-project-dates">Target: Dec 31, 2026</span>
+              </div>
+            </div>
+            <div style="width: 200px; text-align:right;">
+              <div class="project-progress-label">
+                <span>Progress</span>
+                <span id="current-project-pct">25%</span>
+              </div>
+              <div class="progress-bar"><div class="progress-fill" id="current-project-progress" style="width:25%;"></div></div>
+              <button class="btn btn-secondary btn-sm mt-2" onclick="showCreateBlockModal()" style="padding: 4px 10px; font-size:11px;">+ Add Card</button>
+            </div>
+          </div>
+
+          <!-- Board Columns -->
+          <div class="board-columns">
+            
+            <!-- Column 1: TODO -->
+            <div class="board-column" id="col-todo" ondragover="allowDrop(event)" ondrop="drop(event, 'todo')">
+              <div class="column-header">
+                <span class="column-title">To Do</span>
+                <span class="column-count" id="count-todo">0</span>
+              </div>
+              <div class="column-cards" id="cards-todo" style="display:flex; flex-direction:column; gap:10px;"></div>
+            </div>
+
+            <!-- Column 2: IN PROGRESS -->
+            <div class="board-column" id="col-in_progress" ondragover="allowDrop(event)" ondrop="drop(event, 'in_progress')">
+              <div class="column-header">
+                <span class="column-title">In Progress</span>
+                <span class="column-count" id="count-in_progress">0</span>
+              </div>
+              <div class="column-cards" id="cards-in_progress" style="display:flex; flex-direction:column; gap:10px;"></div>
+            </div>
+
+            <!-- Column 3: BLOCKED -->
+            <div class="board-column" id="col-blocked" ondragover="allowDrop(event)" ondrop="drop(event, 'blocked')">
+              <div class="column-header">
+                <span class="column-title">Blocked</span>
+                <span class="column-count" id="count-blocked">0</span>
+              </div>
+              <div class="column-cards" id="cards-blocked" style="display:flex; flex-direction:column; gap:10px;"></div>
+            </div>
+
+            <!-- Column 4: DONE -->
+            <div class="board-column" id="col-done" ondragover="allowDrop(event)" ondrop="drop(event, 'done')">
+              <div class="column-header">
+                <span class="column-title">Done</span>
+                <span class="column-count" id="count-done">0</span>
+              </div>
+              <div class="column-cards" id="cards-done" style="display:flex; flex-direction:column; gap:10px;"></div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: Create Project -->
+<div class="modal-overlay" id="create-project-modal">
+  <div class="modal-card">
+    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:16px;">Create New Project</h3>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Project Title</span>
+        <input type="text" id="new-proj-title" class="input" placeholder="e.g. launch campaign">
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Description</span>
+        <textarea id="new-proj-desc" class="input" placeholder="Brief outline of goals"></textarea>
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Target Date</span>
+        <input type="date" id="new-proj-date" class="input">
+      </label>
+      <div class="flex gap-2 justify-between mt-4">
+        <button class="btn btn-secondary" onclick="hideModal('create-project-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCreateProject()">Create Project</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Create Block -->
+<div class="modal-overlay" id="create-block-modal">
+  <div class="modal-card">
+    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:16px;">Add Kanban Card</h3>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Task Title</span>
+        <input type="text" id="new-block-title" class="input" placeholder="e.g. Design schemas">
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Content</span>
+        <textarea id="new-block-content" class="input" placeholder="Details or notes..."></textarea>
+      </label>
+      <label>
+        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Card Type</span>
+        <select id="new-block-type" class="input">
+          <option value="task">Task</option>
+          <option value="milestone">Milestone</option>
+          <option value="note">Note</option>
+          <option value="decision">Decision</option>
+        </select>
+      </label>
+      <div class="flex gap-2 justify-between mt-4">
+        <button class="btn btn-secondary" onclick="hideModal('create-block-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCreateBlock()">Add Card</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  let activeProjectId = null;
+  let activeProjectData = null;
+
+  async function loadProjects() {
+    try {
+      const projects = await HermesAPI.get('/api/projects');
+      const listEl = document.getElementById('project-list');
+      
+      if (projects.length === 0) {
+        listEl.innerHTML = `
+          <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">
+            No projects found.
+          </div>
+        `;
+        document.getElementById('board-panel').style.display = 'none';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      projects.forEach((p, idx) => {
+        const item = document.createElement('div');
+        item.className = `project-list-item ${p.id === activeProjectId || (!activeProjectId && idx === 0) ? 'active' : ''}`;
+        item.onclick = () => selectProject(p.id);
+        
+        item.innerHTML = `
+          <div class="project-list-name">${p.title}</div>
+          <div class="project-list-meta">
+            <span>${p.progress}% done</span>
+            <span>${HermesUtils.formatDate(p.target_date)}</span>
+          </div>
+        `;
+        listEl.appendChild(item);
+
+        if (!activeProjectId && idx === 0) {
+          activeProjectId = p.id;
+        }
+      });
+
+      if (activeProjectId) {
+        selectProject(activeProjectId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function selectProject(id) {
+    activeProjectId = id;
+    
+    // Update active highlight in sidebar list
+    const items = document.querySelectorAll('.project-list-item');
+    items.forEach(el => el.classList.remove('active'));
+    // Find active element
+    loadProjectDetails(id);
+  }
+
+  async function loadProjectDetails(id) {
+    try {
+      const data = await HermesAPI.get(`/api/projects/${id}`);
+      activeProjectData = data;
+      
+      document.getElementById('board-panel').style.display = 'flex';
+      document.getElementById('current-project-title').textContent = data.title;
+      document.getElementById('current-project-desc').textContent = data.description || 'No description provided.';
+      document.getElementById('current-project-status').innerHTML = HermesUtils.statusBadge(data.status);
+      document.getElementById('current-project-dates').textContent = data.target_date ? `Due: ${HermesUtils.formatDate(data.target_date)}` : 'No target date';
+      document.getElementById('current-project-pct').textContent = `${data.progress}%`;
+      document.getElementById('current-project-progress').style.width = `${data.progress}%`;
+
+      renderKanbanCards(data.blocks);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function renderKanbanCards(blocks) {
+    const cols = ['todo', 'in_progress', 'blocked', 'done'];
+    cols.forEach(col => {
+      document.getElementById(`cards-${col}`).innerHTML = '';
+      document.getElementById(`count-${col}`).textContent = '0';
+    });
+
+    const counts = { todo: 0, in_progress: 0, blocked: 0, done: 0 };
+
+    blocks.forEach(b => {
+      const container = document.getElementById(`cards-${b.status}`);
+      if (!container) return;
+
+      counts[b.status]++;
+      
+      const card = document.createElement('div');
+      card.className = 'kanban-card';
+      card.draggable = true;
+      card.id = `card-${b.id}`;
+      card.ondragstart = (e) => drag(e, b.id);
+      
+      card.innerHTML = `
+        <div class="kanban-card-title">${b.title}</div>
+        ${b.content ? `<div class="kanban-card-desc">${b.content}</div>` : ''}
+        <div class="kanban-card-footer">
+          <span class="badge ${b.block_type === 'milestone' ? 'badge-ai' : 'badge-archived'}">${b.block_type}</span>
+          <span>${b.due_date ? HermesUtils.formatDate(b.due_date) : ''}</span>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    cols.forEach(col => {
+      document.getElementById(`count-${col}`).textContent = counts[col];
+    });
+  }
+
+  // ── Drag & Drop Kanban ─────────────────────────────────────────
+  let draggedBlockId = null;
+
+  function drag(ev, blockId) {
+    draggedBlockId = blockId;
+    ev.dataTransfer.setData("text", ev.target.id);
+  }
+
+  function allowDrop(ev) {
+    ev.preventDefault();
+  }
+
+  async function drop(ev, newStatus) {
+    ev.preventDefault();
+    if (!draggedBlockId) return;
+
+    try {
+      // API call to update status
+      await HermesAPI.patch(`/api/projects/${activeProjectId}/blocks/${draggedBlockId}`, {
+        status: newStatus
+      });
+      // Reload details
+      loadProjectDetails(activeProjectId);
+    } catch (e) {
+      alert("Failed to update status");
+    }
+  }
+
+  // ── Modal controllers ─────────────────────────────────────────
+  function showCreateProjectModal() {
+    document.getElementById('create-project-modal').style.display = 'flex';
+  }
+
+  function showCreateBlockModal() {
+    document.getElementById('create-block-modal').style.display = 'flex';
+  }
+
+  function hideModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  async function submitCreateProject() {
+    const title = document.getElementById('new-proj-title').value.trim();
+    const desc = document.getElementById('new-proj-desc').value.trim();
+    const dateVal = document.getElementById('new-proj-date').value;
+
+    if (!title) return alert("Title is required");
+
+    try {
+      const res = await HermesAPI.post('/api/projects', {
+        title,
+        description: desc,
+        target_date: dateVal || null
+      });
+      hideModal('create-project-modal');
+      activeProjectId = res.id;
+      loadProjects();
+    } catch (e) {
+      alert("Error creating project");
+    }
+  }
+
+  async function submitCreateBlock() {
+    const title = document.getElementById('new-block-title').value.trim();
+    const content = document.getElementById('new-block-content').value.trim();
+    const type = document.getElementById('new-block-type').value;
+
+    if (!title) return alert("Title is required");
+
+    try {
+      await HermesAPI.post(`/api/projects/${activeProjectId}/blocks`, {
+        title,
+        content,
+        block_type: type,
+        status: 'todo'
+      });
+      hideModal('create-block-modal');
+      loadProjectDetails(activeProjectId);
+    } catch (e) {
+      alert("Error adding card");
+    }
+  }
+
+  loadProjects();
+</script>
+</body>
+</html>

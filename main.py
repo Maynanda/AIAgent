@@ -61,12 +61,20 @@ async def lifespan(app: FastAPI):
     tools = tool_registry.list_tools()
     logger.info(f"✅ {len(tools)} tools registered")
 
+    # 5. Start background scheduler
+    logger.info("Starting background scheduler...")
+    from services.scheduler import start_scheduler
+    start_scheduler()
+    logger.info("✅ Scheduler running (graph refinement, email sync, weekly reports)")
+
     logger.info(f"✅ ARIA / Hermes is ready — http://{settings.app_host}:{settings.app_port}")
 
     yield
 
     # Shutdown
     logger.info("Shutting down ARIA / Hermes...")
+    from services.scheduler import stop_scheduler
+    stop_scheduler()
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
@@ -94,8 +102,24 @@ if FRONTEND_DIR.exists():
 
 # ── API Routes ────────────────────────────────────────────────────────────────
 from routes.chat import router as chat_router  # noqa: E402
+from routes.projects import router as projects_router
+from routes.tasks import router as tasks_router
+from routes.emails import router as emails_router
+from routes.activities import router as activities_router
+from routes.knowledge import router as knowledge_router
+from routes.dashboard import router as dashboard_router
+from routes.tools import router as tools_router
+from routes.reports import router as reports_router
 
 app.include_router(chat_router, prefix="/api")
+app.include_router(projects_router, prefix="/api")
+app.include_router(tasks_router, prefix="/api")
+app.include_router(emails_router, prefix="/api")
+app.include_router(activities_router, prefix="/api")
+app.include_router(knowledge_router, prefix="/api")
+app.include_router(dashboard_router, prefix="/api")
+app.include_router(tools_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 
 
 # ── Health check ─────────────────────────────────────────────────────────────

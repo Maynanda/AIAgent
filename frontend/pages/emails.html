@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emails — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <style>
+    .emails-container {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 24px;
+      height: calc(100vh - 140px);
+    }
+
+    .emails-list {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    .email-item-card {
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--bg-overlay);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      position: relative;
+    }
+
+    .email-item-card:hover {
+      border-color: var(--border-subtle);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .email-item-card.active {
+      border-color: var(--border-accent);
+      background: rgba(124,58,237,0.12);
+    }
+
+    .email-subject {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-from {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .email-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .email-body-panel {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .sentiment-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 99px;
+      text-transform: uppercase;
+    }
+
+    .sentiment-positive { background: rgba(34,197,94,0.15); color: var(--status-active); }
+    .sentiment-neutral { background: rgba(245,158,11,0.15); color: var(--status-paused); }
+    .sentiment-negative { background: rgba(239,68,68,0.15); color: var(--status-blocked); }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item active"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Inbox Feed</h1>
+        <p class="page-subtitle">Scan incoming discussions, view summaries, and draft AI replies</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" onclick="syncInbox()">↺ Sync IMAP</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="emails-container">
+        
+        <!-- Left panel: emails list -->
+        <div class="emails-list" id="emails-list-container">
+          <div style="text-align:center; padding:20px; color:var(--text-muted);">Loading inbox...</div>
+        </div>
+
+        <!-- Right panel: email body & AI summary actions -->
+        <div class="email-body-panel" id="email-detail-container" style="display:none;">
+          <div style="border-bottom:1px solid var(--border-subtle); padding-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+              <h2 id="email-subject-detail" style="font-family:var(--font-display); font-size:18px;">Design Sync Discussion</h2>
+              <span id="email-sentiment-badge" class="sentiment-badge">positive</span>
+            </div>
+            <div style="font-size:13px; color:var(--text-secondary); margin-bottom:6px;" id="email-from-detail">From: john@gmail.com</div>
+            <div style="font-size:11px; color:var(--text-muted);" id="email-date-detail">Date: July 13, 2026</div>
+          </div>
+
+          <!-- AI Summary Box -->
+          <div class="card" style="background:rgba(124,58,237,0.06); border-color:var(--border-accent);">
+            <h4 style="font-size:12px; color:var(--text-accent); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px;">🤖 Hermes AI Summary</h4>
+            <p id="email-summary-detail" style="font-size:13px; line-height:1.6; color:var(--text-primary);">Loading AI breakdown...</p>
+          </div>
+
+          <!-- Email original body -->
+          <div style="flex:1; overflow-y:auto; font-size:14px; line-height:1.7; color:var(--text-secondary); white-space:pre-wrap; border-bottom:1px solid var(--border-subtle); padding-bottom:20px;" id="email-body-content">
+            Original message text
+          </div>
+
+          <!-- Reply panel -->
+          <div>
+            <h4 style="font-size:13px; font-weight:600; margin-bottom:10px;">Reply Message</h4>
+            <textarea id="reply-body" class="input" placeholder="Draft your reply..." style="min-height:80px;"></textarea>
+            <div class="flex gap-2 justify-between mt-3">
+              <button class="btn btn-secondary btn-sm" onclick="draftWithAI()">🤖 Draft with AI</button>
+              <button class="btn btn-primary btn-sm" onclick="sendReply()">Send Reply</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  let activeEmailId = null;
+
+  async function loadEmails() {
+    try {
+      const emails = await HermesAPI.get('/api/emails');
+      const container = document.getElementById('emails-list-container');
+      
+      if (emails.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted);">Inbox is empty.</div>';
+        document.getElementById('email-detail-container').style.display = 'none';
+        return;
+      }
+
+      container.innerHTML = '';
+      emails.forEach((e, idx) => {
+        const card = document.createElement('div');
+        card.className = `email-item-card ${e.id === activeEmailId || (!activeEmailId && idx === 0) ? 'active' : ''}`;
+        card.onclick = () => selectEmail(e.id);
+
+        card.innerHTML = `
+          <div class="email-subject">${e.subject || '(No Subject)'}</div>
+          <div class="email-from">${e.sender}</div>
+          <div class="email-meta">
+            <span>${HermesUtils.formatRelative(e.received_at)}</span>
+            <span class="sentiment-badge ${getSentimentClass(e.sentiment)}">${e.sentiment || 'neutral'}</span>
+          </div>
+        `;
+        container.appendChild(card);
+
+        if (!activeEmailId && idx === 0) {
+          activeEmailId = e.id;
+        }
+      });
+
+      if (activeEmailId) {
+        selectEmail(activeEmailId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function getSentimentClass(sent) {
+    if (sent === 'positive') return 'sentiment-positive';
+    if (sent === 'negative') return 'sentiment-negative';
+    return 'sentiment-neutral';
+  }
+
+  async function selectEmail(id) {
+    activeEmailId = id;
+    const cards = document.querySelectorAll('.email-item-card');
+    // Reload details
+    loadEmailDetails(id);
+  }
+
+  async function loadEmailDetails(id) {
+    try {
+      const email = await HermesAPI.get(`/api/emails/${id}`);
+      document.getElementById('email-detail-container').style.display = 'flex';
+      document.getElementById('email-subject-detail').textContent = email.subject || '(No Subject)';
+      document.getElementById('email-from-detail').textContent = `From: ${email.sender}`;
+      document.getElementById('email-date-detail').textContent = `Received: ${HermesUtils.formatDate(email.received_at)}`;
+      
+      const badge = document.getElementById('email-sentiment-badge');
+      badge.textContent = email.sentiment || 'neutral';
+      badge.className = `sentiment-badge ${getSentimentClass(email.sentiment)}`;
+
+      // Load AI summary or parse in background
+      document.getElementById('email-summary-detail').textContent = email.summary || "Hermes is scanning this email to parse action items...";
+      document.getElementById('email-body-content').textContent = email.body || "No email body content available.";
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function syncInbox() {
+    try {
+      const btn = document.querySelector('.btn-secondary');
+      btn.textContent = 'Syncing...';
+      btn.disabled = true;
+      
+      const res = await HermesAPI.post('/api/emails/sync');
+      alert(`Sync completed. Synced ${res.synced_count} emails.`);
+      loadEmails();
+      
+      btn.textContent = '↺ Sync IMAP';
+      btn.disabled = false;
+    } catch (e) {
+      alert("IMAP Sync failed. Make sure IMAP credentials are in .env");
+    }
+  }
+
+  async function sendReply() {
+    const toVal = document.getElementById('email-from-detail').textContent.replace('From: ', '').trim();
+    const subVal = "Re: " + document.getElementById('email-subject-detail').textContent;
+    const bodyVal = document.getElementById('reply-body').value.trim();
+
+    if (!bodyVal) return alert("Body is required");
+
+    try {
+      await HermesAPI.post('/api/emails/send', {
+        to: toVal,
+        subject: subVal,
+        body: bodyVal
+      });
+      alert("Email sent successfully!");
+      document.getElementById('reply-body').value = '';
+    } catch (e) {
+      alert("Error sending email");
+    }
+  }
+
+  async function draftWithAI() {
+    // Drafts response using chat/agent logic
+    const bodyText = document.getElementById('email-body-content').textContent;
+    document.getElementById('reply-body').value = "Drafting reply with Hermes...";
+    
+    try {
+      const res = await HermesAPI.post('/api/chat/message', {
+        message: `Draft a quick professional reply to this email body: "${bodyText.slice(0,300)}"`
+      });
+      document.getElementById('reply-body').value = res.response;
+    } catch (e) {
+      document.getElementById('reply-body').value = '';
+      alert("Failed drafting AI reply");
+    }
+  }
+
+  loadEmails();
+</script>
+</body>
+</html>

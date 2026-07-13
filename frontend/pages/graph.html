@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge Graph — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .graph-container {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 20px;
+      height: calc(100vh - 140px);
+    }
+
+    #graph-svg-container {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      position: relative;
+    }
+
+    #graph-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .node circle {
+      stroke-width: 2;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .node text {
+      font-size: 11px;
+      font-family: 'Inter', sans-serif;
+      fill: #c4c4e8;
+      pointer-events: none;
+    }
+
+    .link {
+      stroke: rgba(124,58,237,0.3);
+      stroke-width: 1.5;
+    }
+
+    .link-label {
+      font-size: 9px;
+      fill: #565675;
+      pointer-events: none;
+    }
+
+    .graph-controls {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .graph-control-btn {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.15s;
+      backdrop-filter: blur(8px);
+    }
+
+    .graph-control-btn:hover {
+      border-color: var(--border-accent);
+      color: var(--text-accent);
+    }
+
+    .node-detail-panel {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+    }
+
+    /* Entity type colors */
+    .type-project  { fill: #7c3aed; stroke: #a78bfa; }
+    .type-person   { fill: #06b6d4; stroke: #22d3ee; }
+    .type-email    { fill: #f59e0b; stroke: #fbbf24; }
+    .type-task     { fill: #22c55e; stroke: #4ade80; }
+    .type-activity { fill: #ec4899; stroke: #f472b6; }
+    .type-topic    { fill: #6366f1; stroke: #818cf8; }
+    .type-default  { fill: #6b7280; stroke: #9ca3af; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item active"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Knowledge Graph</h1>
+        <p class="page-subtitle" id="graph-subtitle">Loading entities and relationships...</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" onclick="loadGraph()">↺ Reload</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="graph-container">
+        
+        <!-- Force-directed Graph Canvas -->
+        <div id="graph-svg-container">
+          <div class="graph-controls">
+            <button class="graph-control-btn" onclick="zoomIn()">+ Zoom In</button>
+            <button class="graph-control-btn" onclick="zoomOut()">− Zoom Out</button>
+            <button class="graph-control-btn" onclick="resetZoom()">↺ Reset</button>
+          </div>
+          <svg id="graph-svg"></svg>
+        </div>
+
+        <!-- Right: Node Detail Panel -->
+        <div class="node-detail-panel">
+          <h3 style="font-family:var(--font-display); font-size:15px; color:var(--text-primary);">Node Details</h3>
+          <div id="node-detail-content" style="color:var(--text-muted); font-size:13px;">
+            Click a node to view details.
+          </div>
+          
+          <div style="margin-top:auto;">
+            <h4 style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px;">Legend</h4>
+            <div style="display:flex; flex-direction:column; gap:6px; font-size:12px;">
+              <div class="flex items-center gap-2"><span style="width:12px;height:12px;border-radius:50%;background:#7c3aed;flex-shrink:0;"></span> Project</div>
+              <div class="flex items-center gap-2"><span style="width:12px;height:12px;border-radius:50%;background:#06b6d4;flex-shrink:0;"></span> Person</div>
+              <div class="flex items-center gap-2"><span style="width:12px;height:12px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span> Email</div>
+              <div class="flex items-center gap-2"><span style="width:12px;height:12px;border-radius:50%;background:#22c55e;flex-shrink:0;"></span> Task</div>
+              <div class="flex items-center gap-2"><span style="width:12px;height:12px;border-radius:50%;background:#ec4899;flex-shrink:0;"></span> Activity</div>
+              <div class="flex items-center gap-2"><span style="width:12px;height:12px;border-radius:50%;background:#6366f1;flex-shrink:0;"></span> Topic</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  const TYPE_COLORS = {
+    project:  { fill: '#7c3aed', stroke: '#a78bfa' },
+    person:   { fill: '#06b6d4', stroke: '#22d3ee' },
+    email:    { fill: '#f59e0b', stroke: '#fbbf24' },
+    task:     { fill: '#22c55e', stroke: '#4ade80' },
+    activity: { fill: '#ec4899', stroke: '#f472b6' },
+    topic:    { fill: '#6366f1', stroke: '#818cf8' },
+    company:  { fill: '#f97316', stroke: '#fb923c' },
+    default:  { fill: '#6b7280', stroke: '#9ca3af' },
+  };
+
+  let svg, g, simulation, zoomBehavior;
+  const width = () => document.getElementById('graph-svg-container').clientWidth;
+  const height = () => document.getElementById('graph-svg-container').clientHeight;
+
+  async function loadGraph() {
+    try {
+      const data = await HermesAPI.get('/api/knowledge/graph');
+      const { nodes, links } = data;
+
+      document.getElementById('graph-subtitle').textContent =
+        `${nodes.length} entities · ${links.length} relationships`;
+
+      if (nodes.length === 0) {
+        document.getElementById('graph-svg-container').innerHTML =
+          `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px;">
+             No entities yet. Start chatting with Hermes or record activities!
+           </div>`;
+        return;
+      }
+
+      renderGraph(nodes, links);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function renderGraph(nodes, links) {
+    // Clean previous
+    d3.select('#graph-svg').selectAll('*').remove();
+
+    const w = width();
+    const h = height();
+
+    svg = d3.select('#graph-svg')
+      .attr('width', w)
+      .attr('height', h);
+
+    // Zoom group
+    g = svg.append('g');
+
+    // Zoom behaviour
+    zoomBehavior = d3.zoom()
+      .scaleExtent([0.2, 4])
+      .on('zoom', (event) => g.attr('transform', event.transform));
+    svg.call(zoomBehavior);
+
+    // Arrow marker
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 20)
+      .attr('refY', 0)
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('fill', 'rgba(124,58,237,0.5)');
+
+    // Force simulation
+    simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(d => d.id).distance(120))
+      .force('charge', d3.forceManyBody().strength(-300))
+      .force('center', d3.forceCenter(w / 2, h / 2))
+      .force('collision', d3.forceCollide(30));
+
+    // Draw links
+    const link = g.append('g')
+      .selectAll('line')
+      .data(links)
+      .enter().append('line')
+      .attr('class', 'link')
+      .attr('marker-end', 'url(#arrow)');
+
+    // Draw link labels
+    const linkLabel = g.append('g')
+      .selectAll('text')
+      .data(links)
+      .enter().append('text')
+      .attr('class', 'link-label')
+      .text(d => d.type);
+
+    // Draw nodes
+    const node = g.append('g')
+      .selectAll('.node')
+      .data(nodes)
+      .enter().append('g')
+      .attr('class', 'node')
+      .call(d3.drag()
+        .on('start', dragStarted)
+        .on('drag', dragged)
+        .on('end', dragEnded))
+      .on('click', (event, d) => showNodeDetail(d));
+
+    // Node circles — size by importance
+    node.append('circle')
+      .attr('r', d => 6 + (d.importance || 0.5) * 12)
+      .attr('fill', d => (TYPE_COLORS[d.type] || TYPE_COLORS.default).fill)
+      .attr('stroke', d => (TYPE_COLORS[d.type] || TYPE_COLORS.default).stroke)
+      .attr('stroke-width', 2)
+      .attr('fill-opacity', 0.85)
+      .on('mouseover', function() { d3.select(this).attr('fill-opacity', 1).attr('stroke-width', 3); })
+      .on('mouseout', function() { d3.select(this).attr('fill-opacity', 0.85).attr('stroke-width', 2); });
+
+    // Node labels
+    node.append('text')
+      .attr('dy', d => (6 + (d.importance || 0.5) * 12) + 14)
+      .attr('text-anchor', 'middle')
+      .text(d => d.name.length > 18 ? d.name.slice(0, 16) + '…' : d.name);
+
+    // Tick update
+    simulation.on('tick', () => {
+      link
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+
+      linkLabel
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2);
+
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+  }
+
+  function showNodeDetail(d) {
+    const c = TYPE_COLORS[d.type] || TYPE_COLORS.default;
+    document.getElementById('node-detail-content').innerHTML = `
+      <div style="margin-bottom:10px;">
+        <span class="badge" style="background:${c.fill}22; color:${c.stroke}; border:1px solid ${c.fill}55;">${d.type}</span>
+      </div>
+      <div style="font-size:16px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">${d.name}</div>
+      ${d.description ? `<p style="font-size:12px; color:var(--text-secondary); line-height:1.5;">${d.description}</p>` : ''}
+      <div style="margin-top:12px; font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">
+        ID: ${d.id.slice(0, 8)}...<br/>
+        Importance: ${((d.importance || 0) * 100).toFixed(0)}%
+      </div>
+    `;
+  }
+
+  function dragStarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragEnded(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null; d.fy = null;
+  }
+
+  function zoomIn()  { svg.transition().call(zoomBehavior.scaleBy, 1.4); }
+  function zoomOut() { svg.transition().call(zoomBehavior.scaleBy, 0.7); }
+  function resetZoom() { svg.transition().call(zoomBehavior.transform, d3.zoomIdentity); }
+
+  loadGraph();
+</script>
+</body>
+</html>

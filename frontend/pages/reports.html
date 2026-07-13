@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports — ARIA / Hermes</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+</head>
+<body>
+<div class="app-layout">
+  <nav class="nav-sidebar">
+    <div class="nav-logo">
+      <div class="nav-logo-icon">⚡</div>
+      <div>
+        <div class="nav-logo-text">ARIA</div>
+        <div class="nav-logo-sub">HERMES · v1.0</div>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
+      <a href="/projects" class="nav-item"><span class="nav-icon">◈</span> Projects</a>
+      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
+      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
+      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Knowledge</div>
+      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
+      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
+      <a href="/reports" class="nav-item active"><span class="nav-icon">≡</span> Reports</a>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-status">
+        <div class="nav-status-dot"></div>
+        <span>Hermes online</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Weekly Reports</h1>
+        <p class="page-subtitle">AI-synthesized summaries of your projects, emails, and activities</p>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="generateReport()">⚡ Generate Report</button>
+    </div>
+
+    <div class="page-body">
+      <div id="reports-list" class="stagger-children">
+        <div style="text-align:center; padding:40px; color:var(--text-muted);">
+          Loading reports...
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  async function loadReports() {
+    const list = document.getElementById('reports-list');
+    try {
+      const reports = await HermesAPI.get('/api/reports');
+      if (reports.length === 0) {
+        list.innerHTML = `
+          <div class="card" style="text-align:center; padding:40px;">
+            <div style="font-size:36px; margin-bottom:16px;">≡</div>
+            <div style="font-size:16px; color:var(--text-secondary); margin-bottom:12px;">No reports generated yet</div>
+            <div style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">
+              Reports are generated every Sunday at 8AM, or you can trigger one manually.
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="generateReport()">Generate First Report</button>
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = '';
+      reports.forEach(r => {
+        const card = document.createElement('div');
+        card.className = 'card animate-fade-up';
+        card.style.marginBottom = '12px';
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div>
+              <div style="font-family:var(--font-display); font-size:16px; font-weight:600; margin-bottom:4px;">
+                Weekly Report — ${r.date}
+              </div>
+              <div style="font-size:12px; color:var(--text-muted);">${r.size_kb} KB · HTML</div>
+            </div>
+            <a href="/api/reports/${r.filename}" target="_blank" class="btn btn-secondary btn-sm">View Report →</a>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+    } catch (e) {
+      list.innerHTML = '<div style="color:var(--status-blocked);">Failed to load reports</div>';
+    }
+  }
+
+  async function generateReport() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    try {
+      const res = await HermesAPI.post('/api/reports/generate', {});
+      alert(`Report generated! File: ${res.path}`);
+      loadReports();
+    } catch (e) {
+      alert('Report generation failed. Make sure Hermes is running.');
+    }
+    btn.disabled = false;
+    btn.textContent = '⚡ Generate Report';
+  }
+
+  loadReports();
+</script>
+</body>
+</html>

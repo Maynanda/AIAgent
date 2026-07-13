@@ -1,0 +1,102 @@
+# ── Python ─────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Virtual Environments ───────────────────────────────────────
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ── Secrets & Config ──────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# ── Model Weights (large binary files) ────────────────────────
+*.bin
+*.pt
+*.safetensors
+*.gguf
+*.onnx
+models/
+model_cache/
+*.model
+# Allow small config JSONs like tokenizer_config.json
+!**/tokenizer_config.json
+!**/config.json
+!**/special_tokens_map.json
+
+# ── Database ──────────────────────────────────────────────────
+*.sqlite
+*.db
+*.sql.backup
+
+# ── Logs & Reports ────────────────────────────────────────────
+*.log
+logs/
+reports/
+*.csv.log
+
+# ── Test & Coverage ───────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ── OS & Editor ───────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Node (frontend build tools if added later) ────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Dynamic tools (auto-generated at runtime) ─────────────────
+tools/dynamic/*.py
+!tools/dynamic/.gitkeep
+
+# ── Alembic generated migration versions ──────────────────────
+# Keep env.py and script.mako but gitignore auto-gen versions
+database/migrations/versions/*.py
+!database/migrations/versions/.gitkeep
+
+# ── Audio uploads (transcription temp files) ──────────────────
+*.webm
+*.wav
+*.mp3
+*.ogg
+uploads/
+tmp/

@@ -73,7 +73,9 @@ async def chat_websocket(
                 # Build memory context
                 memory = MemoryManager(session_id=session_id, db=db)
                 memory.add_short_term(f"User: {user_message}")
-                context = await memory.build_context()
+                
+                from rag.context_builder import build_agent_context
+                context = await build_agent_context(query=user_message, session_id=session_id, db=db)
 
                 # Initialize agent
                 agent = OrchestratorAgent(llm=llm)
@@ -162,7 +164,10 @@ async def chat_http(
         return JSONResponse({"error": "message is required"}, status_code=400)
 
     memory = MemoryManager(session_id=session_id, db=db)
-    context = await memory.build_context()
+    memory.add_short_term(f"User: {user_message}")
+    
+    from rag.context_builder import build_agent_context
+    context = await build_agent_context(query=user_message, session_id=session_id, db=db)
 
     agent = OrchestratorAgent(llm=llm)
     result = await agent.run(
