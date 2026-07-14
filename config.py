@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     postgres_user: str = "hermes"
     postgres_password: str = "hermes_secret"
     database_url: str = (
-        "postgresql+asyncpg://hermes:hermes_secret@localhost:5432/hermes"
+        "sqlite+aiosqlite:///hermes.db"
     )
 
     @computed_field

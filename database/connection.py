@@ -17,13 +17,19 @@ from config import settings
 
 # ── Engine ──────────────────────────────────────────────────────────────────
 # NullPool is used in testing; for production keep default pool.
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.is_dev,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-)
+if "sqlite" in settings.database_url:
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.is_dev,
+    )
+else:
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.is_dev,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+    )
 
 # ── Session factory ──────────────────────────────────────────────────────────
 AsyncSessionLocal = async_sessionmaker(

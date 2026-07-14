@@ -44,61 +44,118 @@ async def retrieve_context(
 
     # ── 1. Vector Search on DocChunks ─────────────────────────────────────────
     if query_vector:
-        try:
-            # pgvector distance operator: <=> (cosine distance)
-            stmt = (
-                select(DocChunk, DocChunk.embedding.cosine_distance(query_vector).label("distance"))
-                .order_by(text("distance"))
-                .limit(limit)
-            )
-            res = await db.execute(stmt)
-            for chunk, dist in res.all():
-                score = 1.0 - float(dist)
-                if score < 0.3:  # cutoff threshold
-                    continue
-                results.append({
-                    "type": "doc_chunk",
-                    "entity_id": chunk.entity_id,
-                    "content": chunk.content,
-                    "score": score,
-                    "metadata": chunk.metadata_,
-                })
-        except Exception as e:
-            logger.warning(f"pgvector doc_chunks search failed: {e}")
+        if "sqlite" in str(db.bind.url):
+            # SQLite fallback: fetch doc chunks and compute similarity in Python
+            try:
+                stmt = select(DocChunk).where(DocChunk.embedding != None)
+                res = await db.execute(stmt)
+                chunks = res.scalars().all()
+                for chunk in chunks:
+                    if chunk.embedding:
+                        emb = chunk.embedding
+                        if isinstance(emb, str):
+                            emb = json.loads(emb)
+                        score = embedder.similarity(query_vector, emb)
+                        if score < 0.3:
+                            continue
+                        results.append({
+                            "type": "doc_chunk",
+                            "entity_id": chunk.entity_id,
+                            "content": chunk.content,
+                            "score": score,
+                            "metadata": chunk.metadata_,
+                        })
+            except Exception as e:
+                logger.warning(f"SQLite doc_chunks fallback search failed: {e}")
+        else:
+            try:
+                # pgvector distance operator: <=> (cosine distance)
+                stmt = (
+                    select(DocChunk, DocChunk.embedding.cosine_distance(query_vector).label("distance"))
+                    .order_by(text("distance"))
+                    .limit(limit)
+                )
+                res = await db.execute(stmt)
+                for chunk, dist in res.all():
+                    score = 1.0 - float(dist)
+                    if score < 0.3:  # cutoff threshold
+                        continue
+                    results.append({
+                        "type": "doc_chunk",
+                        "entity_id": chunk.entity_id,
+                        "content": chunk.content,
+                        "score": score,
+                        "metadata": chunk.metadata_,
+                    })
+            except Exception as e:
+                logger.warning(f"pgvector doc_chunks search failed: {e}")
 
     # ── 2. Vector Search on Entities ──────────────────────────────────────────
     if query_vector:
-        try:
-            stmt = (
-                select(Entity, Entity.embedding.cosine_distance(query_vector).label("distance"))
-                .order_by(text("distance"))
-                .limit(limit)
-            )
-            res = await db.execute(stmt)
-            for entity, dist in res.all():
-                score = 1.0 - float(dist)
-                if score < 0.35:
-                    continue
-                seen_entity_ids.add(entity.id)
-                results.append({
-                    "type": "entity",
-                    "entity_id": entity.id,
-                    "content": f"Entity: {entity.name} (type: {entity.type}). Description: {entity.description or 'None'}",
-                    "score": score + 0.1,  # boost entity match slightly
-                    "metadata": entity.metadata_,
-                })
-        except Exception as e:
-            logger.warning(f"pgvector entities search failed: {e}")
+        if "sqlite" in str(db.bind.url):
+            # SQLite fallback: fetch entities and compute similarity in Python
+            try:
+                stmt = select(Entity).where(Entity.embedding != None)
+                res = await db.execute(stmt)
+                entities = res.scalars().all()
+                for entity in entities:
+                    if entity.embedding:
+                        emb = entity.embedding
+                        if isinstance(emb, str):
+                            emb = json.loads(emb)
+                        score = embedder.similarity(query_vector, emb)
+                        if score < 0.35:
+                            continue
+                        seen_entity_ids.add(entity.id)
+                        results.append({
+                            "type": "entity",
+                            "entity_id": entity.id,
+                            "content": f"Entity: {entity.name} (type: {entity.type}). Description: {entity.description or 'None'}",
+                            "score": score + 0.1,
+                            "metadata": entity.metadata_,
+                        })
+            except Exception as e:
+                logger.warning(f"SQLite entities fallback search failed: {e}")
+        else:
+            try:
+                stmt = (
+                    select(Entity, Entity.embedding.cosine_distance(query_vector).label("distance"))
+                    .order_by(text("distance"))
+                    .limit(limit)
+                )
+                res = await db.execute(stmt)
+                for entity, dist in res.all():
+                    score = 1.0 - float(dist)
+                    if score < 0.35:
+                        continue
+                    seen_entity_ids.add(entity.id)
+                    results.append({
+                        "type": "entity",
+                        "entity_id": entity.id,
+                        "content": f"Entity: {entity.name} (type: {entity.type}). Description: {entity.description or 'None'}",
+                        "score": score + 0.1,  # boost entity match slightly
+                        "metadata": entity.metadata_,
+                    })
+            except Exception as e:
+                logger.warning(f"pgvector entities search failed: {e}")
 
     # ── 3. Trigram (Keyword) Similarity Search ────────────────────────────────
     try:
-        # Check trigram match on entities (name and description)
-        trigm_stmt = (
-            select(Entity)
-            .where(text("name % :q OR description % :q"))
-            .params(q=query)
-            .limit(limit)
-        )
+        if "sqlite" in str(db.bind.url):
+            # SQLite keyword fallback
+            trigm_stmt = (
+                select(Entity)
+                .where((Entity.name.like(f"%{query}%")) | (Entity.description.like(f"%{query}%")))
+                .limit(limit)
+            )
+        else:
+            # Check trigram match on entities (name and description)
+            trigm_stmt = (
+                select(Entity)
+                .where(text("name % :q OR description % :q"))
+                .params(q=query)
+                .limit(limit)
+            )
         trigm_res = await db.execute(trigm_stmt)
         for entity in trigm_res.scalars().all():
             if entity.id in seen_entity_ids:

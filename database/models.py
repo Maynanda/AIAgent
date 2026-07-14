@@ -8,7 +8,30 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from pgvector.sqlalchemy import Vector
+from config import settings
+
+# ── Dynamic imports for SQLite vs Postgres compatibility ──────────────────────
+if "sqlite" in settings.database_url:
+    from sqlalchemy import JSON as SQLiteJSON, String as SQLiteString
+    
+    class Vector(SQLiteJSON):
+        """Mock pgvector.sqlalchemy.Vector for SQLite using JSON representation."""
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+            
+    class ARRAY(SQLiteJSON):
+        """Mock ARRAY dialect using standard SQLite JSON."""
+        def __init__(self, item_type, *args, **kwargs):
+            super().__init__()
+            
+    class UUID(SQLiteString):
+        """Mock UUID dialect using standard SQLite String."""
+        def __init__(self, *args, **kwargs):
+            super().__init__(length=36)
+else:
+    from pgvector.sqlalchemy import Vector
+    from sqlalchemy.dialects.postgresql import ARRAY, UUID
+
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -23,7 +46,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.sql import func
 
@@ -71,12 +93,17 @@ class Entity(Base):
     )
     doc_chunks = relationship("DocChunk", back_populates="entity", lazy="dynamic")
 
-    __table_args__ = (
-        Index("ix_entities_embedding", "embedding", postgresql_using="ivfflat",
-              postgresql_with={"lists": 100}, postgresql_ops={"embedding": "vector_cosine_ops"}),
-        Index("ix_entities_name_trgm", "name", postgresql_using="gin",
-              postgresql_ops={"name": "gin_trgm_ops"}),
-    )
+    if "sqlite" in settings.database_url:
+        __table_args__ = (
+            Index("ix_entities_name", "name"),
+        )
+    else:
+        __table_args__ = (
+            Index("ix_entities_embedding", "embedding", postgresql_using="ivfflat",
+                  postgresql_with={"lists": 100}, postgresql_ops={"embedding": "vector_cosine_ops"}),
+            Index("ix_entities_name_trgm", "name", postgresql_using="gin",
+                  postgresql_ops={"name": "gin_trgm_ops"}),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -411,11 +438,16 @@ class DocChunk(Base):
 
     entity = relationship("Entity", back_populates="doc_chunks")
 
-    __table_args__ = (
-        Index("ix_doc_chunks_embedding", "embedding", postgresql_using="ivfflat",
-              postgresql_with={"lists": 100}, postgresql_ops={"embedding": "vector_cosine_ops"}),
-        Index("ix_doc_chunks_entity", "entity_id"),
-    )
+    if "sqlite" in settings.database_url:
+        __table_args__ = (
+            Index("ix_doc_chunks_entity", "entity_id"),
+        )
+    else:
+        __table_args__ = (
+            Index("ix_doc_chunks_embedding", "embedding", postgresql_using="ivfflat",
+                  postgresql_with={"lists": 100}, postgresql_ops={"embedding": "vector_cosine_ops"}),
+            Index("ix_doc_chunks_entity", "entity_id"),
+        )
 
 
 # ════════════════════════════════════════════════════════════════
