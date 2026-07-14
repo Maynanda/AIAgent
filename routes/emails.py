@@ -124,6 +124,35 @@ async def receive_email(
     db.add(email)
     await db.commit()
 
+    # ── Fire-and-forget: extract project insights from this email ────────────
+    import asyncio
+    async def _extract_in_background() -> None:
+        try:
+            from services.project_intelligence import extract_insights_from_text
+            from database.connection import AsyncSessionLocal
+            async with AsyncSessionLocal() as bg_db:
+                email_text = f"{subject}\n{body.get('body', '')}"
+                await extract_insights_from_text(
+                    text=email_text,
+                    source_type="email",
+                    source_id=str(email.id),
+                    db=bg_db,
+                )
+                # Also refresh leader blocks for any active project mentioned by name
+                from sqlalchemy import select as _sel
+                from database.models import Project as _Proj
+                stmt = _sel(_Proj).where(_Proj.status == "active")
+                res = await bg_db.execute(stmt)
+                projects = res.scalars().all()
+                from services.project_intelligence import refresh_leader_blocks
+                for proj in projects:
+                    if proj.title.lower() in email_text.lower():
+                        await refresh_leader_blocks(str(proj.id), bg_db)
+        except Exception as e:
+            logger.warning(f"Background insight extraction failed for email: {e}")
+
+    asyncio.create_task(_extract_in_background())
+
     return {"id": email.id, "subject": email.subject, "entity_id": email.entity_id}
 
 

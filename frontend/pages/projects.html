@@ -4,571 +4,726 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Projects — ARIA / Hermes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/main.css">
   <style>
-    /* ── Projects Board Layout ── */
-    .projects-container {
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; }
+
+    .page-layout {
       display: grid;
-      grid-template-columns: 280px 1fr;
-      gap: 24px;
-      height: calc(100vh - 140px);
+      grid-template-columns: 270px 1fr;
+      gap: 20px;
+      height: calc(100vh - 120px);
     }
 
-    /* Left Sidebar: Projects List */
-    .projects-sidebar {
-      background: var(--bg-glass);
-      border: 1px solid var(--border-glass);
-      border-radius: var(--radius-lg);
-      padding: 16px;
+    /* ── Sidebar ── */
+    .sidebar {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-title { font-size: 13px; font-weight: 600; color: #a0a0b0; text-transform: uppercase; letter-spacing: .06em; }
+    .btn-new-project {
+      padding: 6px 12px; font-size: 12px; font-weight: 600;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      color: #fff; border: none; border-radius: 8px; cursor: pointer;
+      transition: opacity .2s;
+    }
+    .btn-new-project:hover { opacity: .85; }
+    .project-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .project-item {
+      padding: 12px 14px; border-radius: 10px; cursor: pointer;
+      border: 1px solid transparent; transition: all .18s;
+      background: rgba(255,255,255,0.02);
+    }
+    .project-item:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
+    .project-item.active { background: rgba(124,58,237,0.15); border-color: rgba(124,58,237,0.4); }
+    .project-item-name { font-size: 13px; font-weight: 600; color: #e2e2f0; margin-bottom: 5px; }
+    .project-item-meta { display: flex; justify-content: space-between; align-items: center; }
+    .project-item-pct { font-size: 11px; color: #7c3aed; font-weight: 600; }
+    .project-item-status { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
+    .status-active { background: rgba(34,197,94,.15); color: #4ade80; }
+    .status-paused { background: rgba(234,179,8,.12); color: #facc15; }
+    .status-completed { background: rgba(99,102,241,.12); color: #818cf8; }
+    .mini-progress { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 6px; }
+    .mini-progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #7c3aed, #4f46e5); transition: width .4s; }
+
+    /* ── Main Detail Panel ── */
+    .detail-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
       overflow-y: auto;
     }
-
-    .project-list-item {
-      padding: 12px 14px;
-      border-radius: var(--radius-md);
-      background: var(--bg-overlay);
-      border: 1px solid transparent;
-      cursor: pointer;
-      transition: all var(--transition-fast);
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #555; text-align: center; gap: 12px;
     }
+    .empty-state-icon { font-size: 48px; }
+    .empty-state-text { font-size: 14px; color: #666; }
 
-    .project-list-item:hover {
-      border-color: var(--border-subtle);
-      background: rgba(255,255,255,0.06);
+    /* ── Project Header ── */
+    .project-header {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 20px 24px;
     }
-
-    .project-list-item.active {
-      border-color: var(--border-accent);
-      background: rgba(124,58,237,0.12);
+    .project-title-row {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px;
     }
-
-    .project-list-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin-bottom: 4px;
+    .project-title { font-size: 22px; font-weight: 700; color: #e8e8f8; }
+    .project-description { font-size: 13px; color: #888; line-height: 1.5; }
+    .project-meta-row {
+      display: flex; align-items: center; gap: 16px; margin-top: 10px; flex-wrap: wrap;
     }
-
-    .project-list-meta {
-      font-size: 11px;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
+    .meta-chip {
+      font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500;
+      background: rgba(255,255,255,0.07); color: #999; border: 1px solid rgba(255,255,255,0.1);
     }
-
-    /* Right Panel: Selected Project Kanban Board */
-    .board-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      height: 100%;
+    .meta-chip.deadline { color: #f87171; border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.08); }
+    .meta-chip.ontrack { color: #4ade80; border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.08); }
+    .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn-action {
+      padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05);
+      color: #ccc; cursor: pointer; transition: all .18s; white-space: nowrap;
     }
-
-    .board-header {
-      background: var(--bg-glass);
-      border: 1px solid var(--border-glass);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+    .btn-action:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .btn-action.primary {
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border-color: transparent; color: #fff;
     }
+    .btn-action.primary:hover { opacity: .88; }
 
-    .board-columns {
+    /* ── 4 Leader Blocks ── */
+    .leader-blocks-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      flex: 1;
-      overflow-y: auto;
-      min-height: 0;
-    }
-
-    .board-column {
-      background: rgba(7, 7, 17, 0.5);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
       gap: 12px;
-      max-height: 100%;
-      overflow-y: auto;
     }
+    @media (max-width: 1100px) { .leader-blocks-grid { grid-template-columns: repeat(2, 1fr); } }
 
-    .column-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .column-title {
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-secondary);
-    }
-
-    .column-count {
-      font-size: 11px;
-      font-family: var(--font-mono);
-      background: var(--bg-overlay);
-      border-radius: 99px;
-      padding: 2px 8px;
-      color: var(--text-muted);
-    }
-
-    /* Kanban Card */
-    .kanban-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-glass);
-      border-radius: var(--radius-md);
-      padding: 14px;
-      cursor: grab;
-      transition: all var(--transition-fast);
+    .leader-block {
+      border-radius: 14px;
+      padding: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
       position: relative;
+      transition: border-color .2s;
     }
+    .leader-block:hover { border-color: rgba(255,255,255,0.14); }
+    .lb-progress { background: rgba(99,102,241,0.1); border-color: rgba(99,102,241,0.25); }
+    .lb-focus    { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.2); }
+    .lb-blockers { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.2); }
+    .lb-support  { background: rgba(251,146,60,0.08); border-color: rgba(251,146,60,0.2); }
 
-    .kanban-card:hover {
-      border-color: var(--border-accent);
-      box-shadow: var(--shadow-glow);
-    }
-
-    .kanban-card-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-primary);
+    .lb-icon { font-size: 22px; margin-bottom: 8px; }
+    .lb-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
       margin-bottom: 6px;
-      line-height: 1.4;
+    }
+    .lb-progress .lb-label { color: #818cf8; }
+    .lb-focus    .lb-label { color: #34d399; }
+    .lb-blockers .lb-label { color: #f87171; }
+    .lb-support  .lb-label { color: #fb923c; }
+
+    .lb-kpi { font-size: 28px; font-weight: 700; color: #e8e8f8; line-height: 1; margin-bottom: 4px; }
+    .lb-kpi-sub { font-size: 11px; color: #666; margin-bottom: 10px; }
+    .lb-text { font-size: 12px; color: #aaa; line-height: 1.5; }
+
+    /* Progress ring */
+    .progress-ring-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .progress-ring { transform: rotate(-90deg); }
+    .progress-ring-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 4; }
+    .progress-ring-fill { fill: none; stroke: #7c3aed; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+
+    /* Item pills */
+    .lb-items { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+    .lb-item-pill {
+      font-size: 11px; color: #ccc; background: rgba(255,255,255,0.05);
+      border-radius: 6px; padding: 4px 8px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,0.07);
+    }
+    .lb-item-pill.blocked { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); color: #fca5a5; }
+
+    /* ── AI Insights Panel ── */
+    .section-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      padding: 18px 20px;
+    }
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+    }
+    .section-title { font-size: 13px; font-weight: 700; color: #c0c0d8; display: flex; align-items: center; gap: 7px; }
+    .section-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      background: rgba(124,58,237,.25); color: #a78bfa;
     }
 
-    .kanban-card-desc {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.5;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      margin-bottom: 10px;
+    /* Insights list */
+    .insight-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.02); margin-bottom: 8px;
+      transition: border-color .18s;
     }
-
-    .kanban-card-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 11px;
-      color: var(--text-muted);
-      border-top: 1px solid var(--border-subtle);
-      padding-top: 8px;
-      margin-top: 8px;
+    .insight-item:hover { border-color: rgba(255,255,255,0.12); }
+    .insight-type-badge {
+      font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 5px;
+      text-transform: uppercase; letter-spacing: .05em; flex-shrink: 0;
     }
+    .type-auto_task { background: rgba(99,102,241,.2); color: #818cf8; }
+    .type-risk { background: rgba(239,68,68,.15); color: #f87171; }
+    .type-blocker { background: rgba(239,68,68,.2); color: #fca5a5; }
+    .type-update { background: rgba(16,185,129,.15); color: #34d399; }
+    .type-milestone { background: rgba(251,146,60,.15); color: #fdba74; }
+    .insight-body { flex: 1; }
+    .insight-title { font-size: 13px; font-weight: 600; color: #ddd; margin-bottom: 3px; }
+    .insight-meta { font-size: 11px; color: #666; }
+    .insight-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn-insight {
+      padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px;
+      cursor: pointer; border: 1px solid; transition: all .15s;
+    }
+    .btn-accept { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.3); }
+    .btn-accept:hover { background: rgba(34,197,94,.22); }
+    .btn-reject { background: rgba(239,68,68,.08); color: #f87171; border-color: rgba(239,68,68,.25); }
+    .btn-reject:hover { background: rgba(239,68,68,.16); }
 
-    /* Modals Overlay */
+    /* ── Draft Modal ── */
     .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(8px);
-      z-index: 1000;
-      align-items: center;
-      justify-content: center;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+      z-index: 1000; display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity .2s;
     }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal {
+      background: #14141f; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
+      padding: 28px; width: 560px; max-width: 95vw; max-height: 85vh; overflow-y: auto;
+      transform: translateY(20px); transition: transform .2s;
+    }
+    .modal-overlay.open .modal { transform: translateY(0); }
+    .modal-title { font-size: 18px; font-weight: 700; color: #e8e8f8; margin-bottom: 6px; }
+    .modal-sub { font-size: 13px; color: #666; margin-bottom: 20px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .06em; }
+    .form-select, .form-input {
+      padding: 9px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 9px; color: #e2e2f0; font-size: 13px; font-family: inherit;
+      outline: none; transition: border-color .18s;
+    }
+    .form-select:focus, .form-input:focus { border-color: rgba(124,58,237,.5); }
+    .draft-output {
+      margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+      font-size: 13px; color: #ccc; line-height: 1.7; white-space: pre-wrap;
+      min-height: 120px; display: none;
+    }
+    .draft-output.visible { display: block; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .btn-cancel {
+      padding: 9px 18px; font-size: 13px; font-weight: 600; border-radius: 9px;
+      background: transparent; border: 1px solid rgba(255,255,255,0.12); color: #888; cursor: pointer;
+    }
+    .btn-generate {
+      padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 9px;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5); border: none; color: #fff; cursor: pointer;
+    }
+    .btn-copy {
+      padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 8px;
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); color: #ccc; cursor: pointer;
+    }
+    .btn-copy:hover { background: rgba(255,255,255,0.12); }
 
-    .modal-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-accent);
-      border-radius: var(--radius-lg);
-      width: 480px;
-      padding: 24px;
-      box-shadow: var(--shadow-glow);
+    /* ── Kanban quick view ── */
+    .kanban-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .kanban-col { background: rgba(255,255,255,0.02); border-radius: 10px; padding: 12px; }
+    .kanban-col-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+      color: #666; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;
     }
+    .kanban-count { background: rgba(255,255,255,0.07); border-radius: 8px; padding: 1px 6px; font-size: 10px; color: #888; }
+    .kanban-task {
+      font-size: 12px; color: #ccc; padding: 7px 9px; background: rgba(255,255,255,0.04);
+      border-radius: 8px; border: 1px solid rgba(255,255,255,0.07); margin-bottom: 5px;
+      cursor: pointer; transition: all .15s; line-height: 1.4;
+    }
+    .kanban-task:hover { background: rgba(255,255,255,0.07); }
+    .kanban-task.blocked-task { border-color: rgba(239,68,68,0.25); color: #fca5a5; }
+    .kanban-task.done-task { opacity: .45; text-decoration: line-through; }
+
+    /* ── Loading spinner ── */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.15); border-top-color: #7c3aed; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      background: #1e1e30; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 12px 20px; font-size: 13px; color: #e2e2f0; display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4); transform: translateY(20px); opacity: 0;
+      transition: all .3s; pointer-events: none;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-color: rgba(34,197,94,.3); }
+    .toast.error { border-color: rgba(239,68,68,.3); }
   </style>
 </head>
 <body>
-<div class="app-layout">
+  <!-- Nav injected by main layout -->
+  <script src="/assets/js/nav.js" defer></script>
 
-  <!-- Sidebar Nav -->
-  <nav class="nav-sidebar">
-    <div class="nav-logo">
-      <div class="nav-logo-icon">⚡</div>
-      <div>
-        <div class="nav-logo-text">ARIA</div>
-        <div class="nav-logo-sub">HERMES · v1.0</div>
-      </div>
-    </div>
-    <div class="nav-section">
-      <div class="nav-section-label">Workspace</div>
-      <a href="/" class="nav-item"><span class="nav-icon">⊞</span> Dashboard</a>
-      <a href="/projects" class="nav-item active"><span class="nav-icon">◈</span> Projects</a>
-      <a href="/tasks" class="nav-item"><span class="nav-icon">✓</span> Tasks</a>
-    </div>
-    <div class="nav-section">
-      <div class="nav-section-label">Intelligence</div>
-      <a href="/chat" class="nav-item"><span class="nav-icon">◎</span> Chat with Hermes</a>
-      <a href="/activities" class="nav-item"><span class="nav-icon">◉</span> Activities</a>
-      <a href="/emails" class="nav-item"><span class="nav-icon">✉</span> Emails</a>
-    </div>
-    <div class="nav-section">
-      <div class="nav-section-label">Knowledge</div>
-      <a href="/graph" class="nav-item"><span class="nav-icon">◌</span> Knowledge Graph</a>
-      <a href="/people" class="nav-item"><span class="nav-icon">◯</span> People</a>
-      <a href="/reports" class="nav-item"><span class="nav-icon">≡</span> Reports</a>
-    </div>
-    <div class="nav-footer">
-      <div class="nav-status">
-        <div class="nav-status-dot"></div>
-        <span>Hermes online</span>
-      </div>
-    </div>
-  </nav>
+  <div class="app-container">
+    <div class="page-layout">
 
-  <!-- Main Projects Portal -->
-  <main class="main-content">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Project Board</h1>
-        <p class="page-subtitle">Coordinate milestones, track progress, and view timelines</p>
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="showCreateProjectModal()">+ New Project</button>
-    </div>
-
-    <div class="page-body">
-      <div class="projects-container">
-        
-        <!-- Left: List of projects -->
-        <div class="projects-sidebar" id="project-list">
-          <div style="text-align:center; padding:20px; color:var(--text-muted);">Loading projects...</div>
+      <!-- ── Left Sidebar: Project List ── -->
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Projects</span>
+          <button class="btn-new-project" onclick="openNewProjectModal()">+ New</button>
         </div>
-
-        <!-- Right: Current active project board -->
-        <div class="board-panel" id="board-panel" style="display:none;">
-          
-          <!-- Board header/status -->
-          <div class="board-header">
-            <div>
-              <h2 id="current-project-title" style="font-family:var(--font-display); font-size:20px; margin-bottom:4px;">Hermes System</h2>
-              <p id="current-project-desc" style="font-size:13px; color:var(--text-secondary);">Building workspace modules</p>
-              <div class="flex items-center gap-3 mt-2">
-                <span id="current-project-status"></span>
-                <span style="font-size:12px; color:var(--text-muted);" id="current-project-dates">Target: Dec 31, 2026</span>
-              </div>
-            </div>
-            <div style="width: 200px; text-align:right;">
-              <div class="project-progress-label">
-                <span>Progress</span>
-                <span id="current-project-pct">25%</span>
-              </div>
-              <div class="progress-bar"><div class="progress-fill" id="current-project-progress" style="width:25%;"></div></div>
-              <button class="btn btn-secondary btn-sm mt-2" onclick="showCreateBlockModal()" style="padding: 4px 10px; font-size:11px;">+ Add Card</button>
-            </div>
-          </div>
-
-          <!-- Board Columns -->
-          <div class="board-columns">
-            
-            <!-- Column 1: TODO -->
-            <div class="board-column" id="col-todo" ondragover="allowDrop(event)" ondrop="drop(event, 'todo')">
-              <div class="column-header">
-                <span class="column-title">To Do</span>
-                <span class="column-count" id="count-todo">0</span>
-              </div>
-              <div class="column-cards" id="cards-todo" style="display:flex; flex-direction:column; gap:10px;"></div>
-            </div>
-
-            <!-- Column 2: IN PROGRESS -->
-            <div class="board-column" id="col-in_progress" ondragover="allowDrop(event)" ondrop="drop(event, 'in_progress')">
-              <div class="column-header">
-                <span class="column-title">In Progress</span>
-                <span class="column-count" id="count-in_progress">0</span>
-              </div>
-              <div class="column-cards" id="cards-in_progress" style="display:flex; flex-direction:column; gap:10px;"></div>
-            </div>
-
-            <!-- Column 3: BLOCKED -->
-            <div class="board-column" id="col-blocked" ondragover="allowDrop(event)" ondrop="drop(event, 'blocked')">
-              <div class="column-header">
-                <span class="column-title">Blocked</span>
-                <span class="column-count" id="count-blocked">0</span>
-              </div>
-              <div class="column-cards" id="cards-blocked" style="display:flex; flex-direction:column; gap:10px;"></div>
-            </div>
-
-            <!-- Column 4: DONE -->
-            <div class="board-column" id="col-done" ondragover="allowDrop(event)" ondrop="drop(event, 'done')">
-              <div class="column-header">
-                <span class="column-title">Done</span>
-                <span class="column-count" id="count-done">0</span>
-              </div>
-              <div class="column-cards" id="cards-done" style="display:flex; flex-direction:column; gap:10px;"></div>
-            </div>
-
-          </div>
+        <div class="project-list" id="projectList">
+          <div style="padding:20px;text-align:center;color:#555;font-size:13px;">Loading…</div>
         </div>
-
       </div>
-    </div>
-  </main>
-</div>
 
-<!-- Modal: Create Project -->
-<div class="modal-overlay" id="create-project-modal">
-  <div class="modal-card">
-    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:16px;">Create New Project</h3>
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      <label>
-        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Project Title</span>
-        <input type="text" id="new-proj-title" class="input" placeholder="e.g. launch campaign">
-      </label>
-      <label>
-        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Description</span>
-        <textarea id="new-proj-desc" class="input" placeholder="Brief outline of goals"></textarea>
-      </label>
-      <label>
-        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Target Date</span>
-        <input type="date" id="new-proj-date" class="input">
-      </label>
-      <div class="flex gap-2 justify-between mt-4">
-        <button class="btn btn-secondary" onclick="hideModal('create-project-modal')">Cancel</button>
-        <button class="btn btn-primary" onclick="submitCreateProject()">Create Project</button>
+      <!-- ── Right: Project Detail ── -->
+      <div class="detail-panel" id="detailPanel">
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div style="font-size:16px;font-weight:600;color:#444;">Select a project</div>
+          <div class="empty-state-text">Pick a project from the sidebar to view its status and leader blocks.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Draft Update Modal ── -->
+  <div class="modal-overlay" id="draftModal">
+    <div class="modal">
+      <div class="modal-title">✍️ Generate Update Draft</div>
+      <div class="modal-sub" id="draftModalSub">AI will write a project update based on current status and recent activities.</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Format</label>
+          <select class="form-select" id="draftFormat">
+            <option value="email">📧 Email</option>
+            <option value="slack">💬 Slack message</option>
+            <option value="bullet">📝 Bullet points</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tone</label>
+          <select class="form-select" id="draftTone">
+            <option value="professional">Professional</option>
+            <option value="casual">Casual</option>
+            <option value="executive">Executive brief</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Recipient (optional)</label>
+        <input type="text" class="form-input" id="draftRecipient" placeholder="e.g. the team, John, leadership">
+      </div>
+      <div class="draft-output" id="draftOutput"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeDraftModal()">Cancel</button>
+        <button class="btn-copy" id="btnCopy" style="display:none" onclick="copyDraft()">Copy</button>
+        <button class="btn-generate" id="btnGenerate" onclick="generateDraft()">Generate</button>
       </div>
     </div>
   </div>
-</div>
 
-<!-- Modal: Create Block -->
-<div class="modal-overlay" id="create-block-modal">
-  <div class="modal-card">
-    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:16px;">Add Kanban Card</h3>
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      <label>
-        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Task Title</span>
-        <input type="text" id="new-block-title" class="input" placeholder="e.g. Design schemas">
-      </label>
-      <label>
-        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Content</span>
-        <textarea id="new-block-content" class="input" placeholder="Details or notes..."></textarea>
-      </label>
-      <label>
-        <span style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Card Type</span>
-        <select id="new-block-type" class="input">
-          <option value="task">Task</option>
-          <option value="milestone">Milestone</option>
-          <option value="note">Note</option>
-          <option value="decision">Decision</option>
-        </select>
-      </label>
-      <div class="flex gap-2 justify-between mt-4">
-        <button class="btn btn-secondary" onclick="hideModal('create-block-modal')">Cancel</button>
-        <button class="btn btn-primary" onclick="submitCreateBlock()">Add Card</button>
-      </div>
-    </div>
-  </div>
-</div>
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
 
-<script src="/assets/js/api.js"></script>
-<script>
-  let activeProjectId = null;
-  let activeProjectData = null;
+  <script>
+    let currentProjectId = null;
+    let currentProjectData = null;
 
-  async function loadProjects() {
-    try {
-      const projects = await HermesAPI.get('/api/projects');
-      const listEl = document.getElementById('project-list');
-      
-      if (projects.length === 0) {
-        listEl.innerHTML = `
-          <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">
-            No projects found.
-          </div>
-        `;
-        document.getElementById('board-panel').style.display = 'none';
+    // ── Boot ──────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+      loadProjects();
+    });
+
+    async function loadProjects() {
+      const res = await fetch('/api/projects');
+      const projects = await res.json();
+      renderProjectList(projects);
+      // Auto-select first active
+      const first = projects.find(p => p.status === 'active') || projects[0];
+      if (first) selectProject(first.id);
+    }
+
+    function renderProjectList(projects) {
+      const el = document.getElementById('projectList');
+      if (!projects.length) {
+        el.innerHTML = `<div style="padding:20px;text-align:center;color:#555;font-size:13px;">No projects yet.</div>`;
         return;
       }
-
-      listEl.innerHTML = '';
-      projects.forEach((p, idx) => {
-        const item = document.createElement('div');
-        item.className = `project-list-item ${p.id === activeProjectId || (!activeProjectId && idx === 0) ? 'active' : ''}`;
-        item.onclick = () => selectProject(p.id);
-        
-        item.innerHTML = `
-          <div class="project-list-name">${p.title}</div>
-          <div class="project-list-meta">
-            <span>${p.progress}% done</span>
-            <span>${HermesUtils.formatDate(p.target_date)}</span>
+      el.innerHTML = projects.map(p => `
+        <div class="project-item ${p.id === currentProjectId ? 'active' : ''}"
+             id="proj-item-${p.id}" onclick="selectProject('${p.id}')">
+          <div class="project-item-name">${p.title}</div>
+          <div class="project-item-meta">
+            <span class="project-item-pct">${p.progress}%</span>
+            <span class="project-item-status status-${p.status}">${p.status}</span>
           </div>
-        `;
-        listEl.appendChild(item);
-
-        if (!activeProjectId && idx === 0) {
-          activeProjectId = p.id;
-        }
-      });
-
-      if (activeProjectId) {
-        selectProject(activeProjectId);
-      }
-    } catch (e) {
-      console.error(e);
+          <div class="mini-progress">
+            <div class="mini-progress-fill" style="width:${p.progress}%"></div>
+          </div>
+        </div>
+      `).join('');
     }
-  }
 
-  async function selectProject(id) {
-    activeProjectId = id;
-    
-    // Update active highlight in sidebar list
-    const items = document.querySelectorAll('.project-list-item');
-    items.forEach(el => el.classList.remove('active'));
-    // Find active element
-    loadProjectDetails(id);
-  }
+    // ── Project Detail ────────────────────────────────────────────────────────
+    async function selectProject(id) {
+      currentProjectId = id;
+      document.querySelectorAll('.project-item').forEach(el => el.classList.remove('active'));
+      const item = document.getElementById(`proj-item-${id}`);
+      if (item) item.classList.add('active');
 
-  async function loadProjectDetails(id) {
-    try {
-      const data = await HermesAPI.get(`/api/projects/${id}`);
-      activeProjectData = data;
-      
-      document.getElementById('board-panel').style.display = 'flex';
-      document.getElementById('current-project-title').textContent = data.title;
-      document.getElementById('current-project-desc').textContent = data.description || 'No description provided.';
-      document.getElementById('current-project-status').innerHTML = HermesUtils.statusBadge(data.status);
-      document.getElementById('current-project-dates').textContent = data.target_date ? `Due: ${HermesUtils.formatDate(data.target_date)}` : 'No target date';
-      document.getElementById('current-project-pct').textContent = `${data.progress}%`;
-      document.getElementById('current-project-progress').style.width = `${data.progress}%`;
+      document.getElementById('detailPanel').innerHTML = `
+        <div style="padding:40px;text-align:center;color:#555;">
+          <div class="spinner" style="width:24px;height:24px;border-width:3px;margin:0 auto 12px"></div>
+          <div style="font-size:13px;">Loading project…</div>
+        </div>`;
 
-      renderKanbanCards(data.blocks);
-    } catch (e) {
-      console.error(e);
+      const [projRes, blocksRes, insightsRes] = await Promise.all([
+        fetch(`/api/projects/${id}`),
+        fetch(`/api/projects/${id}/leader-blocks`),
+        fetch(`/api/projects/${id}/insights?status=pending`),
+      ]);
+
+      const proj = await projRes.json();
+      const blocks = await blocksRes.json();
+      const insights = await insightsRes.json();
+      currentProjectData = { proj, blocks, insights };
+
+      renderDetail(proj, blocks, insights);
     }
-  }
 
-  function renderKanbanCards(blocks) {
-    const cols = ['todo', 'in_progress', 'blocked', 'done'];
-    cols.forEach(col => {
-      document.getElementById(`cards-${col}`).innerHTML = '';
-      document.getElementById(`count-${col}`).textContent = '0';
-    });
+    function renderDetail(proj, data, insights) {
+      const kpis = data.kpis || {};
+      const lb = data.leader_blocks || {};
+      const items = data.items || {};
 
-    const counts = { todo: 0, in_progress: 0, blocked: 0, done: 0 };
+      const deadlineClass = (kpis.days_left !== null && kpis.days_left !== undefined && kpis.days_left < 7)
+        ? 'deadline' : 'ontrack';
 
-    blocks.forEach(b => {
-      const container = document.getElementById(`cards-${b.status}`);
-      if (!container) return;
+      // Build progress ring
+      const pct = kpis.progress_pct || 0;
+      const r = 26, circ = 2 * Math.PI * r;
+      const offset = circ - (pct / 100) * circ;
 
-      counts[b.status]++;
-      
-      const card = document.createElement('div');
-      card.className = 'kanban-card';
-      card.draggable = true;
-      card.id = `card-${b.id}`;
-      card.ondragstart = (e) => drag(e, b.id);
-      
-      card.innerHTML = `
-        <div class="kanban-card-title">${b.title}</div>
-        ${b.content ? `<div class="kanban-card-desc">${b.content}</div>` : ''}
-        <div class="kanban-card-footer">
-          <span class="badge ${b.block_type === 'milestone' ? 'badge-ai' : 'badge-archived'}">${b.block_type}</span>
-          <span>${b.due_date ? HermesUtils.formatDate(b.due_date) : ''}</span>
+      document.getElementById('detailPanel').innerHTML = `
+        <!-- Header -->
+        <div class="project-header">
+          <div class="project-title-row">
+            <div>
+              <div class="project-title">${proj.title}</div>
+              ${proj.description ? `<div class="project-description" style="margin-top:5px">${proj.description}</div>` : ''}
+              <div class="project-meta-row">
+                <span class="meta-chip">${proj.status}</span>
+                <span class="meta-chip">Priority ${proj.priority}</span>
+                ${proj.target_date ? `<span class="meta-chip ${deadlineClass}">📅 ${kpis.deadline_label}</span>` : ''}
+                ${proj.start_date ? `<span class="meta-chip">Started ${proj.start_date}</span>` : ''}
+              </div>
+            </div>
+            <div class="header-actions">
+              <button class="btn-action" onclick="refreshBlocks()" id="btnRefresh">🔄 Refresh Blocks</button>
+              <button class="btn-action primary" onclick="openDraftModal()">✍️ Draft Update</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Leader Blocks -->
+        <div class="leader-blocks-grid" id="leaderBlocksGrid">
+          ${renderLeaderBlocks(lb, kpis, items, pct, r, circ, offset)}
+        </div>
+
+        <!-- AI Insights -->
+        ${insights.length > 0 ? `
+        <div class="section-card">
+          <div class="section-header">
+            <div class="section-title">🤖 AI Detected <span class="section-badge">${insights.length} pending</span></div>
+            <button class="btn-action" style="font-size:11px" onclick="loadInsights()">Refresh</button>
+          </div>
+          <div id="insightsList">${renderInsights(insights)}</div>
+        </div>` : ''}
+
+        <!-- Kanban Quick View -->
+        <div class="section-card">
+          <div class="section-header">
+            <div class="section-title">📋 Task Board</div>
+            <button class="btn-action" style="font-size:11px" onclick="addTaskQuick()">+ Add Task</button>
+          </div>
+          <div class="kanban-strip">
+            ${renderKanbanCol('🔵 In Progress', items.in_progress || [], '')}
+            ${renderKanbanCol('⬜ Todo', items.todo || [], '')}
+            ${renderKanbanCol('🔴 Blocked', items.blocked || [], 'blocked-task')}
+            ${renderKanbanCol('✅ Done', items.done || [], 'done-task')}
+          </div>
         </div>
       `;
-      container.appendChild(card);
+
+      // Animate progress ring
+      setTimeout(() => {
+        const fill = document.getElementById('ringFill');
+        if (fill) fill.style.strokeDashoffset = offset;
+      }, 100);
+    }
+
+    function renderLeaderBlocks(lb, kpis, items, pct, r, circ, offset) {
+      const inProgressItems = (items.in_progress || []).slice(0,3);
+      const blockedItems = (items.blocked || []).slice(0,3);
+      const todoItems = (items.todo || []).slice(0,3);
+
+      return `
+        <!-- ① Progress -->
+        <div class="leader-block lb-progress">
+          <div class="lb-icon">🎯</div>
+          <div class="lb-label">Progress</div>
+          <div class="progress-ring-wrap">
+            <svg width="64" height="64" class="progress-ring">
+              <circle class="progress-ring-bg" cx="32" cy="32" r="${r}"/>
+              <circle class="progress-ring-fill" id="ringFill" cx="32" cy="32" r="${r}"
+                stroke-dasharray="${circ}" stroke-dashoffset="${circ}"/>
+            </svg>
+            <div>
+              <div class="lb-kpi">${pct}%</div>
+              <div class="lb-kpi-sub">${kpis.tasks_done}/${kpis.tasks_total} done</div>
+            </div>
+          </div>
+          <div class="lb-text">${lb.progress || '—'}</div>
+        </div>
+
+        <!-- ② Focus / Highlights -->
+        <div class="leader-block lb-focus">
+          <div class="lb-icon">🔥</div>
+          <div class="lb-label">Focus</div>
+          <div class="lb-text" style="margin-bottom:10px">${lb.focus || 'No recent activity highlights.'}</div>
+          <div class="lb-items">
+            ${inProgressItems.map(i => `<div class="lb-item-pill">${i.title}</div>`).join('') || '<div style="font-size:11px;color:#555">No active tasks</div>'}
+          </div>
+        </div>
+
+        <!-- ③ Blockers -->
+        <div class="leader-block lb-blockers">
+          <div class="lb-icon">🚨</div>
+          <div class="lb-label">Blockers</div>
+          <div class="lb-kpi">${kpis.tasks_blocked}</div>
+          <div class="lb-kpi-sub">blocked items</div>
+          <div class="lb-text" style="margin-bottom:10px">${lb.blockers || 'No blockers.'}</div>
+          <div class="lb-items">
+            ${blockedItems.map(i => `<div class="lb-item-pill blocked">${i.title}</div>`).join('') || ''}
+          </div>
+        </div>
+
+        <!-- ④ Need Support / Next Steps -->
+        <div class="leader-block lb-support">
+          <div class="lb-icon">🤝</div>
+          <div class="lb-label">Need Support</div>
+          <div class="lb-text" style="margin-bottom:10px">${lb.need_support || 'No pending next steps.'}</div>
+          <div class="lb-items">
+            ${todoItems.map(i => `<div class="lb-item-pill">${i.title}</div>`).join('') || '<div style="font-size:11px;color:#555">Queue is clear</div>'}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderKanbanCol(title, items, taskClass) {
+      return `
+        <div class="kanban-col">
+          <div class="kanban-col-title">
+            ${title}
+            <span class="kanban-count">${items.length}</span>
+          </div>
+          ${items.length === 0
+            ? `<div style="font-size:11px;color:#444;padding:4px">—</div>`
+            : items.map(i => `<div class="kanban-task ${taskClass}" title="${i.title}">${i.title}</div>`).join('')
+          }
+        </div>`;
+    }
+
+    function renderInsights(insights) {
+      return insights.map(ins => `
+        <div class="insight-item" id="insight-${ins.id}">
+          <span class="insight-type-badge type-${ins.insight_type}">${ins.insight_type.replace('_',' ')}</span>
+          <div class="insight-body">
+            <div class="insight-title">${ins.title}</div>
+            <div class="insight-meta">
+              From: ${ins.source_type} · ${Math.round(ins.confidence * 100)}% confidence
+              ${ins.suggested_due_date ? ` · Due ${ins.suggested_due_date}` : ''}
+            </div>
+          </div>
+          <div class="insight-actions">
+            <button class="btn-insight btn-accept" onclick="acceptInsight('${ins.id}')">✓ Accept</button>
+            <button class="btn-insight btn-reject" onclick="rejectInsight('${ins.id}')">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+    async function refreshBlocks() {
+      if (!currentProjectId) return;
+      const btn = document.getElementById('btnRefresh');
+      btn.innerHTML = '<span class="spinner"></span> Refreshing…';
+      btn.disabled = true;
+
+      const res = await fetch(`/api/projects/${currentProjectId}/leader-blocks/refresh`, { method: 'POST' });
+      const data = await res.json();
+
+      // Update the leader blocks in place
+      const grid = document.getElementById('leaderBlocksGrid');
+      const kpis = data.kpis || {};
+      const lb = data.leader_blocks || {};
+      const items = currentProjectData?.blocks?.items || {};
+      const pct = kpis.progress_pct || 0;
+      const r = 26, circ = 2 * Math.PI * r;
+      const offset = circ - (pct / 100) * circ;
+      grid.innerHTML = renderLeaderBlocks(lb, kpis, items, pct, r, circ, offset);
+      setTimeout(() => {
+        const fill = document.getElementById('ringFill');
+        if (fill) fill.style.strokeDashoffset = offset;
+      }, 50);
+
+      btn.innerHTML = '🔄 Refresh Blocks';
+      btn.disabled = false;
+      showToast('✅ Leader blocks updated', 'success');
+    }
+
+    async function acceptInsight(insightId) {
+      const el = document.getElementById(`insight-${insightId}`);
+      el.style.opacity = '.4';
+      const res = await fetch(`/api/projects/${currentProjectId}/insights/${insightId}/accept`, { method: 'POST' });
+      const data = await res.json();
+      el.remove();
+      showToast(`✅ Task created: ${data.task_title}`, 'success');
+      // Refresh blocks to update progress
+      setTimeout(refreshBlocks, 500);
+    }
+
+    async function rejectInsight(insightId) {
+      const el = document.getElementById(`insight-${insightId}`);
+      el.style.opacity = '.4';
+      await fetch(`/api/projects/${currentProjectId}/insights/${insightId}/reject`, { method: 'POST' });
+      el.remove();
+      showToast('Insight dismissed', '');
+    }
+
+    async function loadInsights() {
+      if (!currentProjectId) return;
+      const res = await fetch(`/api/projects/${currentProjectId}/insights?status=pending`);
+      const insights = await res.json();
+      const list = document.getElementById('insightsList');
+      if (list) list.innerHTML = renderInsights(insights);
+    }
+
+    function addTaskQuick() {
+      const title = prompt('Task title:');
+      if (!title) return;
+      fetch(`/api/projects/${currentProjectId}/blocks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, block_type: 'task', status: 'todo' }),
+      }).then(() => {
+        selectProject(currentProjectId);
+        showToast('✅ Task added', 'success');
+      });
+    }
+
+    // ── Draft Update Modal ────────────────────────────────────────────────────
+    function openDraftModal() {
+      if (!currentProjectId) return;
+      const proj = currentProjectData?.proj;
+      document.getElementById('draftModalSub').textContent =
+        `Generate a status update for: ${proj?.title || 'this project'}`;
+      document.getElementById('draftOutput').classList.remove('visible');
+      document.getElementById('draftOutput').textContent = '';
+      document.getElementById('btnCopy').style.display = 'none';
+      document.getElementById('draftModal').classList.add('open');
+    }
+
+    function closeDraftModal() {
+      document.getElementById('draftModal').classList.remove('open');
+    }
+
+    async function generateDraft() {
+      const btn = document.getElementById('btnGenerate');
+      btn.innerHTML = '<span class="spinner"></span> Generating…';
+      btn.disabled = true;
+
+      const res = await fetch(`/api/projects/${currentProjectId}/draft-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          format: document.getElementById('draftFormat').value,
+          tone: document.getElementById('draftTone').value,
+          recipient: document.getElementById('draftRecipient').value || 'the team',
+        }),
+      });
+      const data = await res.json();
+
+      const output = document.getElementById('draftOutput');
+      output.textContent = data.draft || 'No draft generated.';
+      output.classList.add('visible');
+      document.getElementById('btnCopy').style.display = 'inline-block';
+      btn.innerHTML = 'Regenerate';
+      btn.disabled = false;
+    }
+
+    function copyDraft() {
+      const text = document.getElementById('draftOutput').textContent;
+      navigator.clipboard.writeText(text).then(() => showToast('📋 Copied to clipboard', 'success'));
+    }
+
+    // Close modal on overlay click
+    document.getElementById('draftModal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('draftModal')) closeDraftModal();
     });
 
-    cols.forEach(col => {
-      document.getElementById(`count-${col}`).textContent = counts[col];
-    });
-  }
-
-  // ── Drag & Drop Kanban ─────────────────────────────────────────
-  let draggedBlockId = null;
-
-  function drag(ev, blockId) {
-    draggedBlockId = blockId;
-    ev.dataTransfer.setData("text", ev.target.id);
-  }
-
-  function allowDrop(ev) {
-    ev.preventDefault();
-  }
-
-  async function drop(ev, newStatus) {
-    ev.preventDefault();
-    if (!draggedBlockId) return;
-
-    try {
-      // API call to update status
-      await HermesAPI.patch(`/api/projects/${activeProjectId}/blocks/${draggedBlockId}`, {
-        status: newStatus
-      });
-      // Reload details
-      loadProjectDetails(activeProjectId);
-    } catch (e) {
-      alert("Failed to update status");
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    function showToast(msg, type = '') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast show ${type}`;
+      setTimeout(() => t.classList.remove('show'), 3000);
     }
-  }
 
-  // ── Modal controllers ─────────────────────────────────────────
-  function showCreateProjectModal() {
-    document.getElementById('create-project-modal').style.display = 'flex';
-  }
-
-  function showCreateBlockModal() {
-    document.getElementById('create-block-modal').style.display = 'flex';
-  }
-
-  function hideModal(id) {
-    document.getElementById(id).style.display = 'none';
-  }
-
-  async function submitCreateProject() {
-    const title = document.getElementById('new-proj-title').value.trim();
-    const desc = document.getElementById('new-proj-desc').value.trim();
-    const dateVal = document.getElementById('new-proj-date').value;
-
-    if (!title) return alert("Title is required");
-
-    try {
-      const res = await HermesAPI.post('/api/projects', {
-        title,
-        description: desc,
-        target_date: dateVal || null
+    // ── New Project Modal (simple prompt) ────────────────────────────────────
+    function openNewProjectModal() {
+      const title = prompt('Project name:');
+      if (!title) return;
+      const desc = prompt('Short description (optional):') || '';
+      const target = prompt('Target date YYYY-MM-DD (optional):') || null;
+      fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description: desc, target_date: target }),
+      }).then(r => r.json()).then(p => {
+        loadProjects();
+        setTimeout(() => selectProject(p.id), 400);
+        showToast(`✅ Project "${title}" created`, 'success');
       });
-      hideModal('create-project-modal');
-      activeProjectId = res.id;
-      loadProjects();
-    } catch (e) {
-      alert("Error creating project");
     }
-  }
-
-  async function submitCreateBlock() {
-    const title = document.getElementById('new-block-title').value.trim();
-    const content = document.getElementById('new-block-content').value.trim();
-    const type = document.getElementById('new-block-type').value;
-
-    if (!title) return alert("Title is required");
-
-    try {
-      await HermesAPI.post(`/api/projects/${activeProjectId}/blocks`, {
-        title,
-        content,
-        block_type: type,
-        status: 'todo'
-      });
-      hideModal('create-block-modal');
-      loadProjectDetails(activeProjectId);
-    } catch (e) {
-      alert("Error adding card");
-    }
-  }
-
-  loadProjects();
-</script>
+  </script>
 </body>
 </html>

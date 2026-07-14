@@ -318,3 +318,283 @@ async def delete_block(
     await db.delete(block)
     await db.commit()
     return JSONResponse({"status": "ok", "message": "Block deleted successfully"})
+
+
+# ── Project Intelligence Endpoints ───────────────────────────────────────────
+
+
+@router.get("/{project_id}/leader-blocks")
+async def get_leader_blocks(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Return the live 4 leader blocks + KPI stats for a project.
+    Pulls the latest snapshot blocks, plus real-time computed KPIs.
+    """
+    from services.project_intelligence import compute_project_progress
+    from database.models import ProjectWeeklySnapshot
+    from sqlalchemy import select as sa_select
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    kpis = await compute_project_progress(project_id, db)
+
+    # Pull latest snapshot for AI-written blocks
+    stmt = (
+        sa_select(ProjectWeeklySnapshot)
+        .where(ProjectWeeklySnapshot.project_id == project_id)
+        .order_by(ProjectWeeklySnapshot.week_start.desc())
+        .limit(1)
+    )
+    snap = (await db.execute(stmt)).scalar_one_or_none()
+
+    # Task items per status for the block lists
+    blocks_stmt = sa_select(ProjectBlock).where(ProjectBlock.project_id == project_id)
+    all_blocks = (await db.execute(blocks_stmt)).scalars().all()
+
+    def fmt_block(b: ProjectBlock) -> dict:
+        return {
+            "id": b.id,
+            "title": b.title,
+            "status": b.status,
+            "block_type": b.block_type,
+            "due_date": b.due_date.isoformat() if b.due_date else None,
+        }
+
+    return {
+        "project_id": project_id,
+        "project_title": project.title,
+        "kpis": kpis,
+        # 4 leader blocks (AI text)
+        "leader_blocks": {
+            "progress": snap.block_progress if snap else f"{kpis['progress_pct']}% complete — {kpis['tasks_done']} of {kpis['tasks_total']} items done.",
+            "focus": snap.block_highlights if snap else "No recent highlights yet. Add activities to generate this.",
+            "blockers": snap.block_blockers if snap else ("No blockers." if kpis["tasks_blocked"] == 0 else f"{kpis['tasks_blocked']} items blocked."),
+            "need_support": snap.block_next_steps if snap else "Add activities or tasks to generate next steps.",
+        },
+        # Task items grouped by status
+        "items": {
+            "in_progress": [fmt_block(b) for b in all_blocks if b.status == "in_progress"],
+            "todo": [fmt_block(b) for b in all_blocks if b.status == "todo"],
+            "blocked": [fmt_block(b) for b in all_blocks if b.status == "blocked"],
+            "done": [fmt_block(b) for b in all_blocks if b.status == "done"],
+        },
+    }
+
+
+@router.post("/{project_id}/leader-blocks/refresh")
+async def refresh_leader_blocks_endpoint(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Manually trigger AI to re-analyse recent activities and rewrite the 4 leader blocks.
+    Call this after adding new activities or tasks.
+    """
+    from services.project_intelligence import refresh_leader_blocks, compute_project_progress
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    kpis = await compute_project_progress(project_id, db)
+    blocks = await refresh_leader_blocks(project_id, db)
+
+    return {
+        "status": "refreshed",
+        "kpis": kpis,
+        "leader_blocks": {
+            "progress": blocks.get("block_progress"),
+            "focus": blocks.get("block_highlights"),
+            "blockers": blocks.get("block_blockers"),
+            "need_support": blocks.get("block_next_steps"),
+        },
+    }
+
+
+@router.post("/{project_id}/draft-update")
+async def generate_update_draft(
+    project_id: str,
+    body: dict[str, Any] | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """
+    Generate a short communication update draft for the project.
+    Optionally pass recipient and tone in the body.
+    Body: {recipient?: str, tone?: "formal"|"casual"|"executive", format?: "email"|"slack"|"bullet"}
+    """
+    from services.project_intelligence import compute_project_progress
+    from database.models import ProjectWeeklySnapshot
+    from sqlalchemy import select as sa_select
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    body = body or {}
+    recipient = body.get("recipient", "the team")
+    tone = body.get("tone", "professional")
+    fmt = body.get("format", "email")
+
+    kpis = await compute_project_progress(project_id, db)
+
+    stmt = (
+        sa_select(ProjectWeeklySnapshot)
+        .where(ProjectWeeklySnapshot.project_id == project_id)
+        .order_by(ProjectWeeklySnapshot.week_start.desc())
+        .limit(1)
+    )
+    snap = (await db.execute(stmt)).scalar_one_or_none()
+
+    from llm.client import llm
+    system = "You are a professional project communicator. Write clear, concise project updates."
+    user = f"""
+Project: {project.title}
+Description: {project.description or "N/A"}
+Progress: {kpis["progress_pct"]}% ({kpis["tasks_done"]}/{kpis["tasks_total"]} items done)
+Deadline: {kpis["deadline_label"]}
+Blocked items: {kpis["tasks_blocked"]}
+
+Recent highlights: {snap.block_highlights if snap else "N/A"}
+Blockers: {snap.block_blockers if snap else "N/A"}
+Next steps: {snap.block_next_steps if snap else "N/A"}
+
+Write a short {tone} {fmt} update for {recipient}.
+- Format: {fmt} (if email: include subject line; if slack: use emoji; if bullet: bullet points only)
+- Tone: {tone}
+- Keep it under 150 words
+- End with a clear call to action if there are blockers needing support
+"""
+    try:
+        draft = await llm.generate(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_new_tokens=300,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Draft generation failed: {e}")
+
+    return {
+        "project_id": project_id,
+        "project_title": project.title,
+        "format": fmt,
+        "tone": tone,
+        "recipient": recipient,
+        "draft": draft,
+    }
+
+
+@router.get("/{project_id}/insights")
+async def list_insights(
+    project_id: str,
+    status: str = "pending",
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List AI-detected insights (auto-tasks, risks, blockers) for a project."""
+    from database.models import ProjectInsight
+    from sqlalchemy import select as sa_select
+
+    stmt = (
+        sa_select(ProjectInsight)
+        .where(
+            ProjectInsight.project_id == project_id,
+            ProjectInsight.status == status,
+        )
+        .order_by(ProjectInsight.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    insights = result.scalars().all()
+    return [
+        {
+            "id": ins.id,
+            "insight_type": ins.insight_type,
+            "title": ins.title,
+            "content": ins.content,
+            "confidence": ins.confidence,
+            "source_type": ins.source_type,
+            "suggested_due_date": ins.suggested_due_date.isoformat() if ins.suggested_due_date else None,
+            "status": ins.status,
+            "created_at": ins.created_at.isoformat() if ins.created_at else None,
+        }
+        for ins in insights
+    ]
+
+
+@router.post("/{project_id}/insights/{insight_id}/accept")
+async def accept_insight_endpoint(
+    project_id: str,
+    insight_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Accept an AI insight — promotes it to a real task and kanban block."""
+    from services.project_intelligence import accept_insight
+    task = await accept_insight(insight_id, db)
+    if not task:
+        raise HTTPException(status_code=404, detail="Insight not found or already processed")
+    return {"status": "accepted", "task_id": task.id, "task_title": task.title}
+
+
+@router.post("/{project_id}/insights/{insight_id}/reject")
+async def reject_insight_endpoint(
+    project_id: str,
+    insight_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Dismiss an AI insight."""
+    from database.models import ProjectInsight
+    insight = await db.get(ProjectInsight, insight_id)
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    insight.status = "rejected"
+    await db.commit()
+    return {"status": "rejected", "insight_id": insight_id}
+
+
+@router.get("/{project_id}/weekly-history")
+async def get_weekly_history(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Return week-by-week snapshot history for charting (last 12 weeks)."""
+    from database.models import ProjectWeeklySnapshot
+    from sqlalchemy import select as sa_select
+
+    stmt = (
+        sa_select(ProjectWeeklySnapshot)
+        .where(ProjectWeeklySnapshot.project_id == project_id)
+        .order_by(ProjectWeeklySnapshot.week_start.asc())
+        .limit(12)
+    )
+    result = await db.execute(stmt)
+    snaps = result.scalars().all()
+    return [
+        {
+            "week_start": s.week_start.isoformat(),
+            "progress_pct": s.progress_pct,
+            "tasks_total": s.tasks_total,
+            "tasks_done": s.tasks_done,
+            "tasks_blocked": s.tasks_blocked,
+            "new_tasks_this_week": s.new_tasks_this_week,
+            "completed_tasks_this_week": s.completed_tasks_this_week,
+        }
+        for s in snaps
+    ]
+
+
+@router.post("/digest/send")
+async def send_digest_email(
+    body: dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Send a project status digest email to a given recipient."""
+    from services.project_intelligence import send_projects_digest_email
+
+    recipient = body.get("recipient_email", "").strip()
+    if not recipient:
+        raise HTTPException(status_code=400, detail="recipient_email is required")
+
+    result = await send_projects_digest_email(recipient, db)
+    return {"status": "ok", "message": result}
+
