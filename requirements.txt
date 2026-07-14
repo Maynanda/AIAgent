@@ -34,6 +34,8 @@ qwen-vl-utils>=0.0.8             # Qwen2.5-VL utilities
 # ── Embedding ─────────────────────────────────────────────────
 sentence-transformers>=3.3.0     # nomic-embed-text-v1.5
 einops>=0.8.0                    # required by nomic model
+chromadb>=0.5.0
+
 
 # ── STT (Whisper) ─────────────────────────────────────────────
 openai-whisper>=20240930

@@ -178,24 +178,39 @@ class KnowledgeGraphBuilder:
 
         if embedding_val:
             # Query top matching entity
-            try:
-                # Ordering by pgvector distance
-                sim_stmt = (
-                    select(Entity, Entity.embedding.cosine_distance(embedding_val).label("dist"))
-                    .where(Entity.type == entity_type)
-                    .order_by(text("dist"))
-                    .limit(1)
-                )
-                sim_res = await self.db.execute(sim_stmt)
-                match = sim_res.first()
-                if match:
-                    sim_entity, dist = match
-                    score = 1.0 - float(dist)
-                    if score > 0.94:  # high similarity merge threshold
-                        logger.info(f"Merging duplicate entity '{name}' into existing '{sim_entity.name}' (score: {score:.2f})")
-                        return sim_entity.id
-            except Exception as e:
-                logger.warning(f"Vector deduplication lookup failed: {e}")
+            if "sqlite" in str(self.db.bind.url):
+                try:
+                    from rag.vector_store import query_entities
+                    matched = query_entities(embedding_val, limit=1)
+                    if matched:
+                        item = matched[0]
+                        if item["score"] > 0.94:
+                            sim_entity = await self.db.get(Entity, item["id"])
+                            if sim_entity and sim_entity.type == entity_type:
+                                logger.info(f"Merging duplicate entity '{name}' into existing '{sim_entity.name}' (score: {item['score']:.2f})")
+                                return sim_entity.id
+                except Exception as e:
+                    logger.warning(f"ChromaDB deduplication lookup failed: {e}")
+            else:
+                try:
+                    # Ordering by pgvector distance
+                    sim_stmt = (
+                        select(Entity, Entity.embedding.cosine_distance(embedding_val).label("dist"))
+                        .where(Entity.type == entity_type)
+                        .order_by(text("dist"))
+                        .limit(1)
+                    )
+                    sim_res = await self.db.execute(sim_stmt)
+                    match = sim_res.first()
+                    if match:
+                        sim_entity, dist = match
+                        score = 1.0 - float(dist)
+                        if score > 0.94:  # high similarity merge threshold
+                            logger.info(f"Merging duplicate entity '{name}' into existing '{sim_entity.name}' (score: {score:.2f})")
+                            return sim_entity.id
+                except Exception as e:
+                    logger.warning(f"Vector deduplication lookup failed: {e}")
+
 
         # 3. Create new entity
         new_ent = Entity(

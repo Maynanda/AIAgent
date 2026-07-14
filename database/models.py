@@ -556,3 +556,95 @@ class AgentRun(Base):
     feedback = relationship("ResponseFeedback", backref="run", lazy="dynamic")
 
     __table_args__ = (Index("ix_agent_runs_created", "created_at"),)
+
+
+# ── SQLAlchemy Event Listeners to Sync SQLite to ChromaDB ──────────────────────
+from sqlalchemy import event
+
+@event.listens_for(Entity, "after_insert")
+def entity_after_insert(mapper, connection, target: Entity):
+    if target.embedding:
+        try:
+            import json
+            emb = target.embedding
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+            from rag.vector_store import upsert_entity
+            meta = {
+                "name": target.name or "",
+                "type": target.type or "",
+                "description": target.description or "",
+            }
+            upsert_entity(str(target.id), emb, meta)
+        except Exception:
+            pass
+
+@event.listens_for(Entity, "after_update")
+def entity_after_update(mapper, connection, target: Entity):
+    if target.embedding:
+        try:
+            import json
+            emb = target.embedding
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+            from rag.vector_store import upsert_entity
+            meta = {
+                "name": target.name or "",
+                "type": target.type or "",
+                "description": target.description or "",
+            }
+            upsert_entity(str(target.id), emb, meta)
+        except Exception:
+            pass
+
+@event.listens_for(Entity, "after_delete")
+def entity_after_delete(mapper, connection, target: Entity):
+    try:
+        from rag.vector_store import delete_entity
+        delete_entity(str(target.id))
+    except Exception:
+        pass
+
+
+@event.listens_for(DocChunk, "after_insert")
+def chunk_after_insert(mapper, connection, target: DocChunk):
+    if target.embedding:
+        try:
+            import json
+            emb = target.embedding
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+            from rag.vector_store import upsert_chunk
+            meta = {
+                "entity_id": str(target.entity_id) if target.entity_id else "",
+                "order_index": int(target.order_index) if target.order_index is not None else 0,
+            }
+            upsert_chunk(str(target.id), emb, target.content or "", meta)
+        except Exception:
+            pass
+
+@event.listens_for(DocChunk, "after_update")
+def chunk_after_update(mapper, connection, target: DocChunk):
+    if target.embedding:
+        try:
+            import json
+            emb = target.embedding
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+            from rag.vector_store import upsert_chunk
+            meta = {
+                "entity_id": str(target.entity_id) if target.entity_id else "",
+                "order_index": int(target.order_index) if target.order_index is not None else 0,
+            }
+            upsert_chunk(str(target.id), emb, target.content or "", meta)
+        except Exception:
+            pass
+
+@event.listens_for(DocChunk, "after_delete")
+def chunk_after_delete(mapper, connection, target: DocChunk):
+    try:
+        from rag.vector_store import delete_chunk
+        delete_chunk(str(target.id))
+    except Exception:
+        pass
+
