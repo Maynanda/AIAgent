@@ -263,9 +263,68 @@
       border-radius: 8px; border: 1px solid rgba(255,255,255,0.07); margin-bottom: 5px;
       cursor: pointer; transition: all .15s; line-height: 1.4;
     }
-    .kanban-task:hover { background: rgba(255,255,255,0.07); }
+    .kanban-task:hover { background: rgba(124,58,237,0.12); border-color: rgba(124,58,237,0.3); transform: translateY(-1px); }
     .kanban-task.blocked-task { border-color: rgba(239,68,68,0.25); color: #fca5a5; }
     .kanban-task.done-task { opacity: .45; text-decoration: line-through; }
+
+    /* ── Activity Feed ── */
+    .activity-feed { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; margin-bottom: 14px; }
+    .activity-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 9px 12px; border-radius: 9px; background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06); font-size: 12px;
+    }
+    .activity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .dot-note    { background: #818cf8; }
+    .dot-meeting { background: #34d399; }
+    .dot-email   { background: #fb923c; }
+    .dot-call    { background: #f472b6; }
+    .dot-update  { background: #facc15; }
+    .activity-text { flex: 1; color: #bbb; line-height: 1.5; }
+    .activity-time { font-size: 10px; color: #555; flex-shrink: 0; }
+    .log-activity-form { display: flex; gap: 8px; align-items: flex-end; }
+    .log-input {
+      flex: 1; padding: 9px 12px; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 9px;
+      color: #e2e2f0; font-size: 13px; font-family: inherit;
+      outline: none; transition: border-color .18s; resize: none;
+    }
+    .log-input:focus { border-color: rgba(124,58,237,.5); }
+    .log-type-select {
+      padding: 9px 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 9px; color: #aaa; font-size: 12px; font-family: inherit;
+      outline: none; cursor: pointer; flex-shrink: 0;
+    }
+    .btn-log {
+      padding: 9px 16px; font-size: 12px; font-weight: 600; border-radius: 9px;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5); border: none; color: #fff;
+      cursor: pointer; flex-shrink: 0; transition: opacity .18s;
+    }
+    .btn-log:hover { opacity: .88; }
+    .btn-log:disabled { opacity: .45; }
+
+    /* ── Task Detail Modal ── */
+    .task-modal-status {
+      display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0;
+    }
+    .status-chip {
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1px solid transparent; transition: all .15s;
+      background: rgba(255,255,255,0.05); color: #888; border-color: rgba(255,255,255,0.1);
+    }
+    .status-chip.active-status { color: #fff; }
+    .status-chip[data-status="todo"].active-status { background: rgba(99,102,241,.3); border-color: #818cf8; color: #c7d2fe; }
+    .status-chip[data-status="in_progress"].active-status { background: rgba(16,185,129,.25); border-color: #34d399; color: #6ee7b7; }
+    .status-chip[data-status="blocked"].active-status { background: rgba(239,68,68,.2); border-color: #f87171; color: #fca5a5; }
+    .status-chip[data-status="done"].active-status { background: rgba(124,58,237,.25); border-color: #a78bfa; color: #ddd6fe; }
+    .btn-auto-update {
+      padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 8px;
+      background: linear-gradient(135deg, #059669, #0d9488);
+      border: none; color: #fff; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; transition: opacity .18s;
+    }
+    .btn-auto-update:hover:not(:disabled) { opacity: .88; }
+    .btn-auto-update:disabled { opacity: .45; cursor: not-allowed; }
 
     /* ── Loading spinner ── */
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.15); border-top-color: #7c3aed; border-radius: 50%; animation: spin .6s linear infinite; }
@@ -352,6 +411,35 @@
 
   <!-- Toast -->
   <div class="toast" id="toast"></div>
+
+  <!-- ── Task Detail / Create Modal ── -->
+  <div class="modal-overlay" id="taskModal">
+    <div class="modal" style="width:460px">
+      <div class="modal-title" id="taskModalTitle">Task</div>
+      <div class="modal-sub" id="taskModalBlockTitle" style="margin-bottom:10px;font-size:14px;font-weight:500;color:#ccc"></div>
+
+      <!-- New task title input (only shown when creating) -->
+      <input type="text" class="form-input" id="newTaskTitleInput"
+        placeholder="Task title…" style="display:none;margin-bottom:10px;width:100%">
+
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#666;margin-bottom:8px">Status</div>
+      <div class="task-modal-status">
+        <div class="status-chip" data-status="todo"     onclick="setTaskStatus('todo')">⬜ Todo</div>
+        <div class="status-chip" data-status="in_progress" onclick="setTaskStatus('in_progress')">🔵 In Progress</div>
+        <div class="status-chip" data-status="blocked"  onclick="setTaskStatus('blocked')">🔴 Blocked</div>
+        <div class="status-chip" data-status="done"     onclick="setTaskStatus('done')">✅ Done</div>
+      </div>
+
+      <div class="modal-actions" style="justify-content:space-between">
+        <button class="btn-cancel" id="btnDeleteTask" onclick="deleteTask()"
+          style="color:#f87171;border-color:rgba(248,113,113,.3)">🗑 Delete</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn-cancel" onclick="closeTaskModal()">Cancel</button>
+          <button class="btn-generate" id="btnSaveTask" onclick="saveTask()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
     let currentProjectId = null;
@@ -447,7 +535,10 @@
               </div>
             </div>
             <div class="header-actions">
-              <button class="btn-action" onclick="refreshBlocks()" id="btnRefresh">🔄 Refresh Blocks</button>
+              <button class="btn-action" onclick="refreshBlocks()" id="btnRefresh">🔄 Refresh</button>
+              <button class="btn-auto-update" onclick="autoUpdateFromComms()" id="btnAutoUpdate">
+                ⚡ Auto-Update from Emails &amp; Activities
+              </button>
               <button class="btn-action primary" onclick="openDraftModal()">✍️ Draft Update</button>
             </div>
           </div>
@@ -472,13 +563,37 @@
         <div class="section-card">
           <div class="section-header">
             <div class="section-title">📋 Task Board</div>
-            <button class="btn-action" style="font-size:11px" onclick="addTaskQuick()">+ Add Task</button>
+            <button class="btn-action" style="font-size:11px" onclick="openNewTaskModal()">+ Add Task</button>
           </div>
           <div class="kanban-strip">
-            ${renderKanbanCol('🔵 In Progress', items.in_progress || [], '')}
-            ${renderKanbanCol('⬜ Todo', items.todo || [], '')}
-            ${renderKanbanCol('🔴 Blocked', items.blocked || [], 'blocked-task')}
-            ${renderKanbanCol('✅ Done', items.done || [], 'done-task')}
+            ${renderKanbanCol('🔵 In Progress', items.in_progress || [], 'in_progress')}
+            ${renderKanbanCol('⬜ Todo', items.todo || [], 'todo')}
+            ${renderKanbanCol('🔴 Blocked', items.blocked || [], 'blocked')}
+            ${renderKanbanCol('✅ Done', items.done || [], 'done')}
+          </div>
+        </div>
+
+        <!-- Activity Feed -->
+        <div class="section-card">
+          <div class="section-header">
+            <div class="section-title">📝 Activity Log</div>
+            <span style="font-size:11px;color:#555" id="actScanLabel"></span>
+          </div>
+          <div class="activity-feed" id="activityFeed">
+            <div style="font-size:12px;color:#555;padding:6px">Loading activities…</div>
+          </div>
+          <div class="log-activity-form">
+            <select class="log-type-select" id="actType">
+              <option value="note">📝 Note</option>
+              <option value="meeting">🤝 Meeting</option>
+              <option value="call">📞 Call</option>
+              <option value="update">🔄 Update</option>
+              <option value="email">📧 Email</option>
+            </select>
+            <textarea class="log-input" id="actContent" rows="1"
+              placeholder="Log an activity, decision, or communication related to this project…"
+              oninput="autoResizeAct(this)"></textarea>
+            <button class="btn-log" id="btnLogAct" onclick="logActivity()">Log</button>
           </div>
         </div>
       `;
@@ -488,7 +603,11 @@
         const fill = document.getElementById('ringFill');
         if (fill) fill.style.strokeDashoffset = offset;
       }, 100);
+
+      // Load activity feed for this project
+      loadProjectActivities();
     }
+
 
     function renderLeaderBlocks(lb, kpis, items, pct, r, circ, offset) {
       const inProgressItems = (items.in_progress || []).slice(0,3);
@@ -548,7 +667,8 @@
       `;
     }
 
-    function renderKanbanCol(title, items, taskClass) {
+    function renderKanbanCol(title, items, colStatus) {
+      const taskClass = colStatus === 'blocked' ? 'blocked-task' : colStatus === 'done' ? 'done-task' : '';
       return `
         <div class="kanban-col">
           <div class="kanban-col-title">
@@ -557,7 +677,9 @@
           </div>
           ${items.length === 0
             ? `<div style="font-size:11px;color:#444;padding:4px">—</div>`
-            : items.map(i => `<div class="kanban-task ${taskClass}" title="${i.title}">${i.title}</div>`).join('')
+            : items.map(i => `<div class="kanban-task ${taskClass}"
+                onclick="openTaskModal('${i.id}', ${JSON.stringify(i.title).replace(/'/g,"\\'")}, '${colStatus}')"
+                title="Click to edit task">${i.title}</div>`).join('')
           }
         </div>`;
     }
@@ -637,17 +759,187 @@
       if (list) list.innerHTML = renderInsights(insights);
     }
 
-    function addTaskQuick() {
-      const title = prompt('Task title:');
-      if (!title) return;
-      fetch(`/api/projects/${currentProjectId}/blocks`, {
+    // ── Task Modal ─────────────────────────────────────────────────────────────
+    let _taskModalBlockId = null;
+    let _taskModalCurrentStatus = null;
+
+    function openTaskModal(blockId, title, currentStatus) {
+      _taskModalBlockId = blockId;
+      _taskModalCurrentStatus = currentStatus;
+      document.getElementById('taskModalTitle').textContent = 'Edit Task';
+      document.getElementById('taskModalBlockTitle').textContent = title;
+      document.getElementById('newTaskTitleInput').style.display = 'none';
+      document.getElementById('btnDeleteTask').style.display = 'inline-block';
+      document.querySelectorAll('.status-chip').forEach(chip => {
+        chip.classList.toggle('active-status', chip.dataset.status === currentStatus);
+      });
+      document.getElementById('taskModal').classList.add('open');
+    }
+
+
+    function closeTaskModal() {
+      document.getElementById('taskModal').classList.remove('open');
+    }
+
+    function setTaskStatus(status) {
+      _taskModalCurrentStatus = status;
+      document.querySelectorAll('.status-chip').forEach(chip => {
+        chip.classList.toggle('active-status', chip.dataset.status === status);
+      });
+    }
+
+    async function saveTaskStatus() {
+      if (!_taskModalBlockId) return;
+      const btn = document.getElementById('btnSaveTask');
+      btn.textContent = 'Saving…'; btn.disabled = true;
+
+      await fetch(`/api/projects/${currentProjectId}/blocks/${_taskModalBlockId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: _taskModalCurrentStatus }),
+      });
+
+      closeTaskModal();
+      showToast('✅ Task updated', 'success');
+      // Reload project to reflect new status in kanban & leader blocks
+      await selectProject(currentProjectId);
+      // Trigger background block refresh
+      setTimeout(() => refreshBlocks(), 600);
+    }
+
+    async function deleteTask() {
+      if (!_taskModalBlockId || !confirm('Delete this task?')) return;
+      await fetch(`/api/projects/${currentProjectId}/blocks/${_taskModalBlockId}`, { method: 'DELETE' });
+      closeTaskModal();
+      showToast('Task deleted', '');
+      selectProject(currentProjectId);
+    }
+
+    function openNewTaskModal() {
+      _taskModalBlockId = null;
+      _taskModalCurrentStatus = 'todo';
+      document.getElementById('taskModalTitle').textContent = 'New Task';
+      document.getElementById('taskModalBlockTitle').textContent = '';
+      document.querySelectorAll('.status-chip').forEach(chip => {
+        chip.classList.toggle('active-status', chip.dataset.status === 'todo');
+      });
+      document.getElementById('newTaskTitleInput').style.display = 'block';
+      document.getElementById('newTaskTitleInput').value = '';
+      document.getElementById('btnDeleteTask').style.display = 'none';
+      document.getElementById('taskModal').classList.add('open');
+    }
+
+    async function saveTask() {
+      // If creating new
+      if (!_taskModalBlockId) {
+        const title = document.getElementById('newTaskTitleInput').value.trim();
+        if (!title) return;
+        const btn = document.getElementById('btnSaveTask');
+        btn.textContent = 'Saving…'; btn.disabled = true;
+        await fetch(`/api/projects/${currentProjectId}/blocks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, block_type: 'task', status: _taskModalCurrentStatus }),
+        });
+        closeTaskModal();
+        showToast('✅ Task added', 'success');
+        selectProject(currentProjectId);
+      } else {
+        await saveTaskStatus();
+      }
+    }
+
+    // ── Activity Feed ──────────────────────────────────────────────────────────
+    async function loadProjectActivities() {
+      if (!currentProjectId) return;
+      const res = await fetch(`/api/projects/${currentProjectId}/activities?limit=15`);
+      const acts = await res.json();
+      const feed = document.getElementById('activityFeed');
+      if (!feed) return;
+      if (!acts.length) {
+        feed.innerHTML = `<div style="font-size:12px;color:#555;padding:6px">No activities logged yet. Add a note below.</div>`;
+        return;
+      }
+      const dotMap = { note:'dot-note', meeting:'dot-meeting', email:'dot-email', call:'dot-call', update:'dot-update' };
+      feed.innerHTML = acts.map(a => {
+        const dot = dotMap[a.type] || 'dot-note';
+        const time = a.occurred_at ? new Date(a.occurred_at).toLocaleDateString('en', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+        return `<div class="activity-item">
+          <div class="activity-dot ${dot}"></div>
+          <div class="activity-text">${a.content}</div>
+          <div class="activity-time">${time}</div>
+        </div>`;
+      }).join('');
+    }
+
+    async function logActivity() {
+      const content = document.getElementById('actContent').value.trim();
+      if (!content || !currentProjectId) return;
+      const btn = document.getElementById('btnLogAct');
+      btn.textContent = 'Logging…'; btn.disabled = true;
+
+      const res = await fetch(`/api/projects/${currentProjectId}/activities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, block_type: 'task', status: 'todo' }),
-      }).then(() => {
-        selectProject(currentProjectId);
-        showToast('✅ Task added', 'success');
+        body: JSON.stringify({
+          content,
+          type: document.getElementById('actType').value,
+        }),
       });
+
+      document.getElementById('actContent').value = '';
+      document.getElementById('actContent').style.height = 'auto';
+      btn.textContent = 'Log'; btn.disabled = false;
+
+      if (res.ok) {
+        showToast('✅ Activity logged — AI is analysing…', 'success');
+        loadProjectActivities();
+        // Blocks will refresh in background; also trigger a refresh after 3s
+        setTimeout(() => refreshBlocks(), 3000);
+      } else {
+        showToast('Failed to log activity', 'error');
+      }
+    }
+
+    function autoResizeAct(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+    }
+
+    // ── Auto-Update from Emails & Activities ───────────────────────────────────
+    async function autoUpdateFromComms() {
+      if (!currentProjectId) return;
+      const btn = document.getElementById('btnAutoUpdate');
+      btn.innerHTML = '<span class="spinner" style="border-color:rgba(255,255,255,.3);border-top-color:#fff"></span> Scanning…';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/projects/${currentProjectId}/auto-update`, { method: 'POST' });
+        const data = await res.json();
+
+        // Update leader blocks in place
+        const grid = document.getElementById('leaderBlocksGrid');
+        const kpis = data.kpis || {};
+        const lb = data.leader_blocks || {};
+        const items = currentProjectData?.blocks?.items || {};
+        const pct = kpis.progress_pct || 0;
+        const r = 26, circ = 2 * Math.PI * r;
+        const offset = circ - (pct / 100) * circ;
+        if (grid) grid.innerHTML = renderLeaderBlocks(lb, kpis, items, pct, r, circ, offset);
+        setTimeout(() => {
+          const fill = document.getElementById('ringFill');
+          if (fill) fill.style.strokeDashoffset = offset;
+        }, 50);
+
+        loadProjectActivities();
+        loadInsights();
+        showToast(`⚡ Scanned ${data.items_scanned} items, found ${data.insights_extracted} insights`, 'success');
+      } catch (err) {
+        showToast('Auto-update failed', 'error');
+      } finally {
+        btn.innerHTML = '⚡ Auto-Update from Emails &amp; Activities';
+        btn.disabled = false;
+      }
     }
 
     // ── Draft Update Modal ────────────────────────────────────────────────────

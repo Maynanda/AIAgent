@@ -51,8 +51,26 @@ async def _run_weekly_report() -> None:
     logger.info("📊 Generating weekly report...")
     try:
         from services.report_service import generate_weekly_report
-        await generate_weekly_report()
-        logger.info("Weekly report generated successfully")
+        path = await generate_weekly_report()
+        logger.info(f"Weekly report generated successfully: {path}")
+
+        # Send the report by email if credentials are configured
+        if settings.email_address:
+            try:
+                from pathlib import Path
+                from services.email_service import smtp_send_email
+                from datetime import datetime
+                html_content = Path(path).read_text(encoding="utf-8")
+                subject = f"📊 Hermes Weekly Report — {datetime.utcnow().strftime('%B %d, %Y')}"
+                # Send as plain-text fallback (HTML inline) to configured address
+                await smtp_send_email(
+                    to_email=settings.email_address,
+                    subject=subject,
+                    content=html_content,
+                )
+                logger.info(f"Weekly report emailed to {settings.email_address}")
+            except Exception as mail_err:
+                logger.warning(f"Failed to email weekly report (report still saved): {mail_err}")
     except Exception as e:
         logger.error(f"Weekly report generation failed: {e}")
 

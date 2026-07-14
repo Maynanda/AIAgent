@@ -598,3 +598,232 @@ async def send_digest_email(
     result = await send_projects_digest_email(recipient, db)
     return {"status": "ok", "message": result}
 
+
+# ── Per-project Activity Feed ─────────────────────────────────────────────────
+
+@router.get("/{project_id}/activities")
+async def list_project_activities(
+    project_id: str,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List activities linked to this project (by entity relation or project_id tag)."""
+    from database.models import Activity
+    from sqlalchemy import select as sa_select, or_
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Find activities tagged with this project id in metadata, or whose content
+    # mentions the project title — simple match via JSON field
+    stmt = (
+        sa_select(Activity)
+        .where(
+            or_(
+                Activity.metadata_["project_id"].astext == project_id,
+                Activity.related_entities.contains([project.entity_id]) if project.entity_id else False,
+            )
+        )
+        .order_by(Activity.occurred_at.desc())
+        .limit(limit)
+    )
+    try:
+        result = await db.execute(stmt)
+        activities = result.scalars().all()
+    except Exception:
+        activities = []
+
+    return [
+        {
+            "id": str(a.id),
+            "type": a.type,
+            "content": a.content,
+            "source": a.source,
+            "occurred_at": a.occurred_at.isoformat() if a.occurred_at else None,
+        }
+        for a in activities
+    ]
+
+
+@router.post("/{project_id}/activities")
+async def log_project_activity(
+    project_id: str,
+    body: dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Log a manual activity (note, update, meeting) directly against a project.
+    This automatically triggers an AI insight extraction pass and optionally
+    refreshes the 4 leader blocks.
+    """
+    from database.models import Activity, Entity, Relation
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    content = body.get("content", "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content is required")
+
+    activity_type = body.get("type", "note")
+
+    # Create activity entity node
+    entity = Entity(
+        type="activity",
+        name=f"{activity_type.capitalize()} — {project.title} — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+        description=content[:300],
+    )
+    db.add(entity)
+    await db.flush()
+
+    # Link activity entity → project entity
+    if project.entity_id:
+        rel = Relation(
+            from_entity_id=entity.id,
+            to_entity_id=project.entity_id,
+            relation_type="related_to",
+        )
+        db.add(rel)
+
+    activity = Activity(
+        entity_id=entity.id,
+        type=activity_type,
+        content=content,
+        source="manual_project",
+        related_entities=[project.entity_id] if project.entity_id else [],
+        occurred_at=datetime.utcnow(),
+        metadata_={"project_id": project_id, "project_title": project.title},
+    )
+    db.add(activity)
+    await db.commit()
+
+    # Fire-and-forget: extract insights + refresh blocks
+    import asyncio
+
+    async def _bg() -> None:
+        try:
+            from database.connection import AsyncSessionLocal
+            from services.project_intelligence import extract_insights_from_text, refresh_leader_blocks
+            async with AsyncSessionLocal() as bg_db:
+                await extract_insights_from_text(
+                    text=content,
+                    source_type="activity",
+                    source_id=str(activity.id),
+                    db=bg_db,
+                )
+                await refresh_leader_blocks(project_id, bg_db)
+        except Exception as exc:
+            logger.warning(f"Background activity processing failed: {exc}")
+
+    asyncio.create_task(_bg())
+
+    return {
+        "id": str(activity.id),
+        "type": activity.type,
+        "content": activity.content,
+        "occurred_at": activity.occurred_at.isoformat(),
+    }
+
+
+@router.post("/{project_id}/auto-update")
+async def auto_update_project_from_comms(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    AI-driven update: scans the last 30 days of emails and activities that
+    mention this project, then:
+    1. Extracts new insights (risks, blockers, tasks)
+    2. Refreshes the 4 leader blocks
+    3. Updates the project progress %
+    Returns the updated leader blocks + KPIs.
+    """
+    from services.project_intelligence import (
+        extract_insights_from_text,
+        refresh_leader_blocks,
+        compute_project_progress,
+    )
+    from database.models import Activity, Email as EmailModel
+    from sqlalchemy import select as sa_select
+    from datetime import timedelta
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    cutoff = datetime.utcnow() - timedelta(days=30)
+
+    # Gather activities that reference this project
+    acts_stmt = (
+        sa_select(Activity)
+        .where(Activity.occurred_at >= cutoff)
+        .order_by(Activity.occurred_at.desc())
+        .limit(40)
+    )
+    acts = (await db.execute(acts_stmt)).scalars().all()
+    relevant_acts = [
+        a for a in acts
+        if project.title.lower() in (a.content or "").lower()
+        or (a.metadata_ or {}).get("project_id") == project_id
+    ]
+
+    # Gather emails that mention the project title
+    emails_stmt = (
+        sa_select(EmailModel)
+        .where(EmailModel.received_at >= cutoff)
+        .order_by(EmailModel.received_at.desc())
+        .limit(30)
+    )
+    emails = (await db.execute(emails_stmt)).scalars().all()
+    relevant_emails = [
+        e for e in emails
+        if project.title.lower() in f"{e.subject or ''} {e.body or ''}".lower()
+    ]
+
+    # Extract insights from each relevant item
+    extracted = 0
+    for act in relevant_acts:
+        try:
+            await extract_insights_from_text(
+                text=act.content,
+                source_type="activity",
+                source_id=str(act.id),
+                db=db,
+            )
+            extracted += 1
+        except Exception as exc:
+            logger.warning(f"Insight extraction failed for activity {act.id}: {exc}")
+
+    for em in relevant_emails:
+        try:
+            text = f"{em.subject or ''}\n{em.body or ''}"
+            await extract_insights_from_text(
+                text=text,
+                source_type="email",
+                source_id=str(em.id),
+                db=db,
+            )
+            extracted += 1
+        except Exception as exc:
+            logger.warning(f"Insight extraction failed for email {em.id}: {exc}")
+
+    # Refresh leader blocks with AI
+    blocks = await refresh_leader_blocks(project_id, db)
+    kpis = await compute_project_progress(project_id, db)
+
+    return {
+        "status": "updated",
+        "items_scanned": len(relevant_acts) + len(relevant_emails),
+        "insights_extracted": extracted,
+        "kpis": kpis,
+        "leader_blocks": {
+            "progress": blocks.get("block_progress"),
+            "focus": blocks.get("block_highlights"),
+            "blockers": blocks.get("block_blockers"),
+            "need_support": blocks.get("block_next_steps"),
+        },
+    }
+
+
