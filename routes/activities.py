@@ -90,12 +90,41 @@ async def record_activity(
 
     await db.commit()
 
+    # ── Fire-and-forget: extract project insights from this activity ──────────
+    import asyncio
+    async def _extract_in_background() -> None:
+        try:
+            from services.project_intelligence import extract_insights_from_text
+            from database.connection import AsyncSessionLocal
+            async with AsyncSessionLocal() as bg_db:
+                await extract_insights_from_text(
+                    text=content,
+                    source_type="activity",
+                    source_id=str(activity.id),
+                    db=bg_db,
+                )
+                # Also refresh leader blocks for any project mentioned by name in the content
+                from sqlalchemy import select as _sel
+                from database.models import Project as _Proj
+                stmt = _sel(_Proj).where(_Proj.status == "active")
+                res = await bg_db.execute(stmt)
+                projects = res.scalars().all()
+                from services.project_intelligence import refresh_leader_blocks
+                for proj in projects:
+                    if proj.title.lower() in content.lower():
+                        await refresh_leader_blocks(str(proj.id), bg_db)
+        except Exception as e:
+            logger.warning(f"Background insight extraction failed: {e}")
+
+    asyncio.create_task(_extract_in_background())
+
     return {
         "id": activity.id,
         "entity_id": activity.entity_id,
         "type": activity.type,
         "content": activity.content,
     }
+
 
 
 @router.post("/with-image")

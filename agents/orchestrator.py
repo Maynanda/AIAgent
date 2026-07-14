@@ -17,7 +17,12 @@ from agents.email_agent import EmailAgent
 from agents.project_agent import ProjectAgent
 from agents.knowledge_agent import KnowledgeAgent
 from agents.filesystem_agent import FilesystemAgent
-from tools.static.project_tools import create_project, create_project_block, update_block_status, list_active_projects
+from tools.static.project_tools import (
+    create_project, create_project_block, update_block_status, list_active_projects,
+    get_project_progress, refresh_project_blocks, list_project_insights,
+    accept_project_insight, reject_project_insight, get_project_weekly_history,
+    send_projects_digest_email,
+)
 from tools.static.email_tools import send_email_message, list_unread_emails, get_email_content
 from tools.static.db_tools import search_knowledge_base, add_entity_relation, record_activity_note
 from tools.static.filesystem_tools import (
@@ -82,6 +87,13 @@ class OrchestratorAgent(BaseAgent):
             "create_project_block": create_project_block,
             "update_block_status": update_block_status,
             "list_active_projects": list_active_projects,
+            "get_project_progress": get_project_progress,
+            "refresh_project_blocks": refresh_project_blocks,
+            "list_project_insights": list_project_insights,
+            "accept_project_insight": accept_project_insight,
+            "reject_project_insight": reject_project_insight,
+            "get_project_weekly_history": get_project_weekly_history,
+            "send_projects_digest_email": send_projects_digest_email,
             # Email tools
             "send_email_message": send_email_message,
             "list_unread_emails": list_unread_emails,

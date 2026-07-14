@@ -68,6 +68,64 @@ async def _run_prompt_evolution() -> None:
         logger.error(f"Prompt evolution run failed: {e}")
 
 
+async def _run_project_task_extraction() -> None:
+    """Daily 6 PM job: scan recent emails and activities for action items and risks."""
+    logger.info("🔍 Running project insight extraction from recent inputs...")
+    try:
+        from database.connection import AsyncSessionLocal
+        from services.project_intelligence import extract_insights_from_text
+        from sqlalchemy import select
+        from database.models import Activity, Email
+        from datetime import datetime, timedelta
+
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        async with AsyncSessionLocal() as db:
+            # Process recent unprocessed activities
+            stmt = select(Activity).where(Activity.created_at >= cutoff)
+            result = await db.execute(stmt)
+            activities = result.scalars().all()
+            for act in activities:
+                await extract_insights_from_text(
+                    text=act.content,
+                    source_type="activity",
+                    source_id=str(act.id),
+                    db=db,
+                )
+
+            # Process recent unprocessed emails
+            stmt2 = select(Email).where(
+                Email.received_at >= cutoff,
+                Email.is_processed == False,  # noqa: E712
+            )
+            result2 = await db.execute(stmt2)
+            emails = result2.scalars().all()
+            for email in emails:
+                text = f"{email.subject or ''}\n{email.body or ''}"
+                await extract_insights_from_text(
+                    text=text,
+                    source_type="email",
+                    source_id=str(email.id),
+                    db=db,
+                )
+
+        logger.info(f"Project extraction: processed {len(activities)} activities, {len(emails)} emails")
+    except Exception as e:
+        logger.error(f"Project task extraction failed: {e}")
+
+
+async def _run_weekly_project_snapshots() -> None:
+    """Monday 7 AM job: snapshot all active projects + refresh 4 leader blocks."""
+    logger.info("📸 Taking weekly project snapshots...")
+    try:
+        from database.connection import AsyncSessionLocal
+        from services.project_intelligence import take_weekly_snapshot
+        async with AsyncSessionLocal() as db:
+            result = await take_weekly_snapshot(db)
+            logger.info(f"Weekly snapshots: {result}")
+    except Exception as e:
+        logger.error(f"Weekly project snapshots failed: {e}")
+
+
 def start_scheduler() -> None:
     """Register and start all background cron jobs."""
     # Nightly at 2 AM — graph refinement
@@ -102,8 +160,24 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Every day at 6 PM — scan new activities + emails for project insights
+    scheduler.add_job(
+        _run_project_task_extraction,
+        CronTrigger(hour=18, minute=0),
+        id="project_task_extraction",
+        replace_existing=True,
+    )
+
+    # Every Monday at 7 AM — snapshot all active projects
+    scheduler.add_job(
+        _run_weekly_project_snapshots,
+        CronTrigger(day_of_week="mon", hour=7, minute=0),
+        id="weekly_project_snapshots",
+        replace_existing=True,
+    )
+
     scheduler.start()
-    logger.info("✅ Background scheduler started (graph refinement, email sync, weekly reports, prompt evolution)")
+    logger.info("✅ Background scheduler started (graph refinement, email sync, weekly reports, prompt evolution, project insights, weekly snapshots)")
 
 
 def stop_scheduler() -> None:

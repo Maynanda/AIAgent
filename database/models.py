@@ -214,6 +214,86 @@ class Task(Base):
     __table_args__ = (Index("ix_tasks_project", "project_id"),)
 
 
+class ProjectWeeklySnapshot(Base):
+    """
+    Monday snapshot of a project's live state.
+    Captured automatically each week and used to power the weekly history chart.
+    Also stores the 4 AI-computed leader blocks as of that week.
+    """
+
+    __tablename__ = "project_weekly_snapshots"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    week_start = Column(Date, nullable=False)          # Monday of the captured week
+
+    # ── Computed KPIs ─────────────────────────────
+    progress_pct = Column(Integer, default=0)          # 0-100
+    tasks_total = Column(Integer, default=0)
+    tasks_done = Column(Integer, default=0)
+    tasks_in_progress = Column(Integer, default=0)
+    tasks_blocked = Column(Integer, default=0)
+    new_tasks_this_week = Column(Integer, default=0)
+    completed_tasks_this_week = Column(Integer, default=0)
+
+    # ── 4 Leader Blocks (AI-written, refreshed each week) ──
+    block_progress = Column(Text)    # "67% complete — 12 of 18 tasks done"
+    block_highlights = Column(Text)  # "This week: shipped API v2, unblocked auth issue"
+    block_blockers = Column(Text)    # "2 blocked tasks: payment gateway, legal review"
+    block_next_steps = Column(Text)  # "Next: finalize UI, user testing, send proposal"
+
+    # ── Raw summary ────────────────────────────────
+    summary = Column(Text)           # Full LLM narrative of the week
+    metadata_ = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "week_start", name="uq_project_weekly_snapshot"),
+        Index("ix_project_snapshots_project", "project_id"),
+    )
+
+
+class ProjectInsight(Base):
+    """
+    AI-detected action item, risk, or update extracted from an email,
+    activity, or other incoming information.
+
+    Status flow: pending → accepted (becomes real Task) | rejected (dismissed)
+    """
+
+    __tablename__ = "project_insights"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
+    # null project_id = unmatched insight (shown in global inbox)
+
+    insight_type = Column(String(32), default="auto_task")
+    # auto_task | risk | blocker | update | milestone
+
+    title = Column(Text, nullable=False)
+    content = Column(Text)                             # Full extracted text
+    suggested_due_date = Column(Date)                  # If AI detected a deadline
+
+    source_type = Column(String(32))                   # email | activity | note | chat
+    source_id = Column(UUID(as_uuid=False))            # FK to the source record
+
+    confidence = Column(Float, default=0.8)            # AI match confidence (0-1)
+    status = Column(String(32), default="pending")     # pending | accepted | rejected
+    accepted_task_id = Column(UUID(as_uuid=False), ForeignKey("tasks.id", ondelete="SET NULL"))
+    # set when accepted → promoted to a real task
+
+    metadata_ = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_project_insights_project", "project_id"),
+        Index("ix_project_insights_status", "status"),
+    )
+
+
+
+
 # ════════════════════════════════════════════════════════════════
 #  EMAILS
 # ════════════════════════════════════════════════════════════════

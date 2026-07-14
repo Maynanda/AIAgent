@@ -2,67 +2,75 @@
 
 > **A**utonomous **R**easoning & **I**ntelligence **A**gent — Your Personal AI Second Brain
 
-ARIA (codename: **Hermes**) is a fully local, self-improving personal AI assistant built on top of `Qwen2.5-VL-7B-Instruct`. It reads your emails, tracks your projects, records your activities, grows a knowledge graph from everything it sees, and runs as a local-first multi-agent system.
+ARIA (codename: **Hermes**) is a **fully local, privacy-first personal AI assistant** built around a multi-agent ReAct loop. It reads your emails, tracks your projects, records your activities, navigates your local file system, and grows a knowledge graph from everything it learns — all powered by your own hardware via a layer 0 model API.
 
 ---
 
-## 🧠 Features
+## 🧠 Capabilities at a Glance
 
-| Capability | Description |
-|---|---|
-| **Multi-Agent ReAct Loop** | Orchestrator delegates to email, project, and knowledge specialist agents |
-| **Local LLM** | Qwen2.5-VL-7B-Instruct via HuggingFace `transformers` with 4-bit GPU quantization |
-| **Knowledge Graph** | PostgreSQL + pgvector — auto-grows from every email, note, and activity |
-| **Hybrid RAG** | Vector search + trigram keyword + 1-hop graph traversal |
-| **Email Integration** | IMAP sync + SMTP send OR local macOS Outlook desktop app sync + send via AppleScript |
-| **Project Tracker** | Kanban boards, milestones, and progress tracking |
-| **Activity Logger** | Manual notes + Whisper voice-to-text transcription |
-| **Self-Improvement** | Dynamic tool creation sandbox + prompt evolution engine |
-| **Weekly Reports** | LLM-synthesized HTML reports every Sunday |
-| **Live Streaming UI** | WebSocket streaming chat, D3.js knowledge graph, glassmorphic dark UI |
+| Capability                        | Description                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Multi-Agent ReAct Loop**  | Orchestrator delegates to specialist agents — email, project, knowledge, and filesystem |
+| **Multimodal Vision**       | Qwen2.5-VL understands images sent in chat or attached to activities                     |
+| **Local Filesystem Access** | Read folders, search files, write content, and describe images via vision                |
+| **Knowledge Graph**         | Auto-grows from every email, note, file, and activity using PostgreSQL + pgvector        |
+| **Hybrid RAG**              | Vector similarity + trigram keyword + 1-hop graph traversal                              |
+| **Email Integration**       | IMAP/SMTP OR local macOS Outlook desktop app (AppleScript sync + send)                   |
+| **Project Tracker**         | Kanban boards, milestones, and deadlines                                                 |
+| **Activity Logger**         | Manual notes, image-annotated entries, and Whisper voice transcription                   |
+| **Self-Improvement**        | Dynamic tool sandbox + prompt evolution engine                                           |
+| **Weekly Reports**          | LLM-synthesized HTML reports of the week's work                                          |
+| **Live Streaming UI**       | WebSocket token streaming, D3.js knowledge graph, glassmorphic dark frontend             |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     FastAPI + WebSocket                      │
-├────────────┬─────────────┬────────────┬──────────────────────┤
-│  Chat API  │ Projects API│ Emails API │  Knowledge/RAG API   │
-└────────────┴─────────────┴────────────┴──────────────────────┘
-              ↓ Orchestrator Agent (ReAct loop)
-    ┌─────────┬────────────┬──────────────┐
-    │ Email   │  Project   │  Knowledge   │  ← Specialist Agents
-    │  Agent  │   Agent    │    Agent     │
-    └─────────┴────────────┴──────────────┘
-              ↓ Tools Registry (static + dynamic)
-┌──────────────────────────────────────────────────────────────┐
-│              PostgreSQL + pgvector (Single DB)                │
-│   Entities · Relations · Projects · Emails · Activities      │
-│   AgentRuns · ToolRegistry · PromptVersions · Feedback       │
-└──────────────────────────────────────────────────────────────┘
-              ↓ Background Scheduler (APScheduler)
-  • Nightly graph refinement & relation decay
-  • 30-min IMAP email sync
-  • Sunday weekly report synthesis
-  • Weekly prompt evolution analysis
+┌──────────────────────────────────────────────────────────────────┐
+│                       FastAPI + WebSocket                        │
+├──────────┬─────────────┬──────────┬──────────────┬──────────────┤
+│ Chat API │ Projects API│Emails API│Knowledge API │Filesystem API│
+└──────────┴─────────────┴──────────┴──────────────┴──────────────┘
+                     ↓ OrchestratorAgent (ReAct loop)
+       ┌──────────┬───────────┬──────────────┬──────────────┐
+       │  Email   │  Project  │  Knowledge   │  Filesystem  │  ← Specialists
+       │  Agent   │   Agent   │    Agent     │    Agent     │
+       └──────────┴───────────┴──────────────┴──────────────┘
+                     ↓ Tools Registry (static + dynamic)
+┌──────────────────────────────────────────────────────────────────┐
+│               PostgreSQL + pgvector  (Single DB)                 │
+│  Entities · Relations · Projects · Emails · Activities           │
+│  AgentRuns · ToolRegistry · PromptVersions · Feedback            │
+└──────────────────────────────────────────────────────────────────┘
+                     ↓ Background Scheduler (APScheduler)
+     • 30-min email sync         • Nightly graph refinement
+     • Sunday weekly report      • Weekly prompt evolution
 ```
+
+### LLM Endpoint Routing (Layer 0 API)
+
+| Request Type          | Endpoint                                      |
+| --------------------- | --------------------------------------------- |
+| Text-only generation  | `POST {LLM_API_BASE}/v1/chat/completions`   |
+| Vision (image + text) | `POST {LLM_API_BASE}/v1/multimodal`         |
+| Single embedding      | `POST {EMBED_API_BASE}/v1/embeddings`       |
+| Batch embeddings      | `POST {EMBED_API_BASE}/v1/embeddings/batch` |
 
 ---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Python 3.11+
 - Docker & Docker Compose
-- NVIDIA GPU (recommended, ~8GB VRAM for 4-bit Qwen2.5-VL-7B)
-- CUDA 12.x
+- Layer 0 model API running locally (provides `/v1/chat/completions`, `/v1/multimodal`, `/v1/embeddings`, `/v1/embeddings/batch`)
 
 ### 1. Clone & Configure
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Maynanda/AIAgent.git
 cd AIAgent
 cp .env.example .env
 # Edit .env with your settings
@@ -72,14 +80,14 @@ cp .env.example .env
 
 ```bash
 docker-compose up -d
-# PostgreSQL with pgvector, pg_trgm enabled
+# PostgreSQL with pgvector + pg_trgm
 ```
 
 ### 3. Install Python Dependencies
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
@@ -104,112 +112,153 @@ python main.py
 
 ```
 AIAgent/
-├── agents/                    # Multi-agent system
-│   ├── base.py               # ReAct loop foundation
-│   ├── orchestrator.py       # Top-level routing + streaming
-│   ├── email_agent.py        # Email specialist
-│   ├── project_agent.py      # Project/task specialist
-│   ├── knowledge_agent.py    # Graph/search specialist
-│   ├── tool_builder.py       # Dynamic tool sandbox
-│   └── prompt_evolution.py   # Self-improvement engine
-├── database/
-│   ├── models.py             # Single source of truth ORM
-│   ├── connection.py         # Async engine + sessions
-│   ├── seed.py               # Initial data seeding
-│   └── migrations/           # Alembic schema migrations
-├── knowledge_graph/
-│   ├── builder.py            # Entity extraction + graph building
-│   └── updater.py            # Nightly consolidation
-├── llm/
-│   ├── client.py             # Qwen2.5-VL singleton (4-bit)
-│   └── prompts/              # Versioned system prompts
-├── rag/
-│   ├── embedder.py           # nomic-embed-text-v1.5
-│   ├── retriever.py          # Hybrid search engine
-│   └── context_builder.py   # Context assembly
-├── memory/
-│   └── manager.py            # Short-term + episodic memory
-├── routes/                   # FastAPI API routers
-│   ├── chat.py               # WebSocket + HTTP chat
-│   ├── projects.py           # Projects + Kanban blocks
-│   ├── tasks.py              # Task management
-│   ├── emails.py             # Email CRUD + sync + send
-│   ├── activities.py         # Activity logging + transcribe
-│   ├── knowledge.py          # Graph viz + hybrid search
-│   ├── dashboard.py          # Summary metrics
-│   ├── tools.py              # Tool registry management
-│   └── reports.py            # Weekly report API
-├── services/
-│   ├── email_service.py      # IMAP/SMTP integration
-│   ├── whisper_service.py    # Local STT (Whisper)
-│   ├── report_service.py     # Weekly report synthesis
-│   └── scheduler.py          # APScheduler background jobs
+├── agents/
+│   ├── base.py                  # ReAct loop foundation + AgentStep/AgentResult
+│   ├── orchestrator.py          # Top-level routing + WebSocket streaming
+│   ├── email_agent.py           # Email read/send specialist
+│   ├── project_agent.py         # Kanban + milestones specialist
+│   ├── knowledge_agent.py       # Graph search + entity specialist
+│   ├── filesystem_agent.py      # Local file read/write/search specialist
+│   ├── tool_builder.py          # Dynamic tool sandbox (code execution)
+│   └── prompt_evolution.py      # Self-improvement engine
 ├── tools/
-│   ├── registry.py           # Static + dynamic tool loader
-│   ├── static/               # Built-in agent tools
-│   └── dynamic/              # Agent-created tools (hot-loaded)
+│   ├── registry.py              # Static + dynamic tool loader
+│   └── static/
+│       ├── db_tools.py          # Knowledge graph CRUD tools
+│       ├── email_tools.py       # Email send/list tools
+│       ├── project_tools.py     # Project + block tools
+│       └── filesystem_tools.py  # File read/write/search/index tools
+├── llm/
+│   ├── client.py                # LLM client — chat vs multimodal endpoint routing
+│   └── prompts/                 # Versioned system & task prompts
+├── rag/
+│   ├── embedder.py              # Embedding client — /v1/embeddings + /v1/embeddings/batch
+│   ├── retriever.py             # Hybrid vector + trigram + graph retrieval
+│   └── context_builder.py       # Context window assembly
+├── memory/
+│   └── manager.py               # Short-term + episodic memory
+├── knowledge_graph/
+│   ├── builder.py               # Entity extraction + graph building
+│   └── updater.py               # Nightly consolidation + relation decay
+├── database/
+│   ├── models.py                # Single-source ORM (SQLAlchemy async)
+│   ├── connection.py            # Async engine + session factory
+│   ├── seed.py                  # Initial data seeder
+│   └── migrations/              # Alembic schema migrations
+├── services/
+│   ├── email_service.py         # IMAP/SMTP + macOS Outlook AppleScript
+│   ├── whisper_service.py       # Local Whisper STT
+│   ├── report_service.py        # Weekly report synthesis
+│   └── scheduler.py             # APScheduler background jobs
+├── routes/
+│   ├── chat.py                  # WebSocket streaming + HTTP multipart chat
+│   ├── projects.py              # Projects + Kanban
+│   ├── tasks.py                 # Task management
+│   ├── emails.py                # Inbox CRUD + sync + send
+│   ├── activities.py            # Activity log + voice + image-annotated entries
+│   ├── knowledge.py             # Graph viz + hybrid search
+│   ├── dashboard.py             # Metrics summary
+│   ├── tools.py                 # Tool registry management
+│   └── reports.py               # Weekly report API
 ├── frontend/
-│   ├── index.html            # Dashboard
+│   ├── index.html               # Dashboard
 │   └── pages/
-│       ├── chat.html         # Streaming chat UI
-│       ├── projects.html     # Kanban board
-│       ├── activities.html   # Activity recorder
-│       ├── emails.html       # Inbox manager
-│       ├── graph.html        # D3.js knowledge graph
-│       └── reports.html      # Weekly reports viewer
-├── main.py                   # FastAPI entrypoint
-├── config.py                 # Settings (pydantic-settings)
-├── requirements.txt          # Dependencies
-├── docker-compose.yml        # PostgreSQL + pgvector
-└── alembic.ini               # Migration config
+│       ├── chat.html            # Streaming chat (WebSocket + multimodal)
+│       ├── projects.html        # Kanban board
+│       ├── tasks.html           # Task list
+│       ├── activities.html      # Activity recorder
+│       ├── emails.html          # Inbox manager
+│       ├── people.html          # People / contacts view
+│       ├── graph.html           # D3.js live knowledge graph
+│       ├── reports.html         # Weekly reports viewer
+│       └── tools.html           # Tool registry viewer
+├── main.py                      # FastAPI entrypoint + lifespan
+├── config.py                    # Settings (pydantic-settings + .env)
+├── requirements.txt
+├── docker-compose.yml
+└── alembic.ini
 ```
 
 ---
 
-## 🔧 Environment Variables
+## ⚙️ Environment Variables
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env`. Key variables:
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL async connection string |
-| `LLM_MODEL_NAME` | HuggingFace model ID (default: Qwen/Qwen2.5-VL-7B-Instruct) |
-| `LLM_DEVICE` | `cuda` or `cpu` |
-| `LLM_LOAD_IN_4BIT` | Enable 4-bit quantization (true/false) |
-| `EMBEDDING_MODEL` | nomic-embed-text-v1.5 |
-| `EMAIL_CLIENT` | Email source client (`imap` or `outlook` for local macOS desktop app) |
-| `EMAIL_ADDRESS` | Your Gmail / IMAP email address (required for IMAP) |
-| `EMAIL_PASSWORD` | App password (required for IMAP) |
-| `EMAIL_IMAP_HOST` | IMAP server (e.g. imap.gmail.com) |
-| `EMAIL_SMTP_HOST` | SMTP server (e.g. smtp.gmail.com) |
-| `EMAIL_SMTP_PORT` | SMTP port (e.g. 587) |
-| `EMAIL_SMTP_USE_TLS` | SMTP TLS enabled (true/false) |
-| `WHISPER_MODEL_SIZE` | base / small / medium / large |
+### LLM (Layer 0 API)
+
+| Variable                | Default                         | Description                                              |
+| ----------------------- | ------------------------------- | -------------------------------------------------------- |
+| `LLM_PROVIDER`        | `openai`                      | `local` (Transformers GPU) or `openai` (layer 0 API) |
+| `LLM_MODEL_ID`        | `Qwen/Qwen2.5-VL-7B-Instruct` | Model name sent in API payload                           |
+| `LLM_API_BASE`        | `http://localhost:8080`       | Base URL of your layer 0 server                          |
+| `LLM_CHAT_PATH`       | `/v1/chat/completions`        | Text-only generation endpoint                            |
+| `LLM_MULTIMODAL_PATH` | `/v1/multimodal`              | Vision + text generation endpoint                        |
+
+### Embeddings (Layer 0 API)
+
+| Variable                 | Default                   | Description                                              |
+| ------------------------ | ------------------------- | -------------------------------------------------------- |
+| `EMBED_PROVIDER`       | `api`                   | `local` (SentenceTransformer) or `api` (layer 0 API) |
+| `EMBED_API_BASE`       | `http://localhost:8080` | Base URL of your embedding server                        |
+| `EMBED_API_PATH`       | `/v1/embeddings`        | Single / small batch endpoint                            |
+| `EMBED_BATCH_API_PATH` | `/v1/embeddings/batch`  | Large batch endpoint                                     |
+
+### Email
+
+| Variable           | Description                                                   |
+| ------------------ | ------------------------------------------------------------- |
+| `EMAIL_CLIENT`   | `imap` or `outlook` (macOS local Outlook via AppleScript) |
+| `EMAIL_ADDRESS`  | Your email address                                            |
+| `EMAIL_PASSWORD` | App password (IMAP only)                                      |
+
+### Filesystem
+
+| Variable                          | Description                                        |
+| --------------------------------- | -------------------------------------------------- |
+| `FILESYSTEM_ALLOWED_PATHS`      | Comma-separated absolute paths Hermes can access   |
+| `FILESYSTEM_MAX_FILE_BYTES`     | Max file size to read in full (default 10MB)       |
+| `FILESYSTEM_BLOCKED_EXTENSIONS` | Extensions always blocked (`.env,.key,.pem,...`) |
 
 ---
 
-## 🤖 Using Hermes
+## 🤖 Talking to Hermes
 
-### Chat Interface
-Navigate to `http://localhost:8000/chat` and talk to Hermes:
+Navigate to `http://localhost:8000/pages/chat.html`:
 
 ```
+# Projects
 "What are my active projects?"
-"Summarize my emails from this week"
-"Create a new project called 'Product Launch'"
-"What tasks are blocked?"
-"Draft a reply to John's email about the budget"
+"Create a new project called Product Launch"
+"Mark the design task as done"
+
+# Email
+"Summarize my unread emails"
+"Draft a reply to the budget email from John"
+
+# Knowledge
+"What do you know about Alpha Technologies?"
+"Who did I last talk to about the API redesign?"
+
+# Filesystem
+"List my Documents folder"
+"Read the README in ~/Projects/Backend"
+"Search for all PDF files in ~/Documents"
+"Index my meeting notes folder into the knowledge graph"
+
+# Multimodal
+"What's in this screenshot?" + attach image
+"Add this whiteboard photo as a meeting note" + attach image
 ```
 
-### Dynamic Tool Creation
-Hermes can create its own tools:
+---
 
-```
-"Create a tool that fetches the current Bitcoin price"
-```
+## 🔒 Security Model
 
-### Weekly Reports
-Generated every Sunday at 8AM, or trigger manually at `http://localhost:8000/reports`
+- **Filesystem**: Path allow-list enforced at every call — Hermes cannot read outside `FILESYSTEM_ALLOWED_PATHS`
+- **Blocked extensions**: `.env`, `.key`, `.pem`, `.crt` files are never readable
+- **Dynamic tools**: Sandboxed execution with configurable timeout
+- **API keys**: Stored in `.env` only, never logged or stored in DB
 
 ---
 
@@ -219,10 +268,10 @@ Generated every Sunday at 8AM, or trigger manually at `http://localhost:8000/rep
 # Run with hot reload
 APP_ENV=development python main.py
 
-# Access API docs
+# API docs
 open http://localhost:8000/api/docs
 
-# Create a new migration after model changes
+# Create a new migration
 alembic revision --autogenerate -m "describe change"
 alembic upgrade head
 ```
@@ -231,7 +280,7 @@ alembic upgrade head
 
 ## 📄 License
 
-MIT License — Built for personal productivity. Grow it with your own data.
+MIT License — Built for personal productivity. Run locally. Own your data.
 
 ---
 
