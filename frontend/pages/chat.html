@@ -646,11 +646,13 @@
   let isStreaming = false;
   let currentMessageEl = null;
   let currentRunId = null;
+  let messagesHistory = [];
 
   // ── Init ──────────────────────────────────────────────────────
   chat.connect();
   chat.onAck = (sid) => {
     document.getElementById('session-id-display').textContent = `session: ${sid.slice(0, 8)}`;
+    loadSessionHistory(sid);
   };
   // Accumulates the raw streaming text before final parse
   let _streamBuffer = '';
@@ -703,6 +705,15 @@
       // ── Re-render bubble with proper collapsed thinking block ──
       const raw = _streamBuffer.trim();
       _streamBuffer = '';
+
+      // Save to history
+      messagesHistory.push({
+        role: 'hermes',
+        rawText: raw,
+        meta: meta,
+        timestamp: Date.now()
+      });
+      saveSessionHistory(chat.sessionId);
 
       // Split on Answer:
       const answerMatch = raw.match(/(?:^|\n)Answer:\s*([\s\S]*)$/);
@@ -787,6 +798,150 @@
     updateStatus('error', 'Error occurred');
   };
 
+  // ── History management ──────────────────────────────────────────
+  function saveSessionHistory(sid) {
+    if (!sid) return;
+    localStorage.setItem('hermes_chat_history_' + sid, JSON.stringify(messagesHistory));
+  }
+
+  function loadSessionHistory(sid) {
+    if (!sid) return;
+    const historyStr = localStorage.getItem('hermes_chat_history_' + sid);
+    if (historyStr) {
+      messagesHistory = JSON.parse(historyStr);
+      renderHistory();
+    } else {
+      messagesHistory = [];
+      renderDefaultWelcome();
+    }
+  }
+
+  function renderDefaultWelcome() {
+    const area = document.getElementById('messages-area');
+    area.innerHTML = `
+      <div class="welcome-screen" id="welcome-screen">
+        <div class="welcome-icon">⚡</div>
+        <h2 class="welcome-title">Hello, I'm Hermes</h2>
+        <p class="welcome-sub">Your personal AI assistant. Ask me anything about your projects, emails, and activities.</p>
+        <div class="starter-grid">
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What projects are active right now?">
+            <div class="starter-card-icon">◈</div>
+            <div class="starter-card-title">Project Status</div>
+            <div class="starter-card-desc">See all active projects and progress</div>
+          </div>
+          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What are my open tasks this week?">
+            <div class="starter-card-icon">✓</div>
+            <div class="starter-card-title">Open Tasks</div>
+            <div class="starter-card-desc">Review and prioritize your task list</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHistory() {
+    const area = document.getElementById('messages-area');
+    area.innerHTML = '';
+    if (!messagesHistory.length) {
+      renderDefaultWelcome();
+      return;
+    }
+    messagesHistory.forEach(msg => {
+      const now = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (msg.role === 'user') {
+        const msgEl = document.createElement('div');
+        msgEl.className = 'message user';
+        msgEl.innerHTML = `
+          <div class="message-avatar">👤</div>
+          <div class="message-body">
+            <div class="message-meta">You · ${now}</div>
+            <div class="message-bubble">
+              <span class="bubble-text">${escapeHtml(msg.content)}</span>
+            </div>
+            <div class="message-actions"></div>
+          </div>
+        `;
+        area.appendChild(msgEl);
+      } else {
+        const msgEl = document.createElement('div');
+        msgEl.className = 'message hermes';
+        
+        const raw = msg.rawText || '';
+        const answerMatch = raw.match(/(?:^|\n)Answer:\s*([\s\S]*)$/);
+        const answerText  = answerMatch ? answerMatch[1].trim() : raw;
+        const thinkingRaw = answerMatch ? raw.slice(0, raw.indexOf('\nAnswer:')).trim() : '';
+
+        let stepsHtml = '';
+        let stepCount = 0;
+        if (thinkingRaw) {
+          const lines = thinkingRaw.split('\n');
+          let currentType = 'thought', currentLines = [];
+          const flush = () => {
+            if (!currentLines.length) return;
+            const cls = currentType === 'thought' ? 'step-thought'
+                      : currentType === 'action'  ? 'step-action'
+                      : 'step-observe';
+            const label = currentType.charAt(0).toUpperCase() + currentType.slice(1);
+            stepsHtml += `<div class="thinking-step ${cls}">
+              <div class="thinking-step-label">${label}</div>
+              <div class="thinking-step-body">${escapeHtml(currentLines.join('\n'))}</div>
+            </div>`;
+            currentLines = [];
+          };
+          for (const line of lines) {
+            if (/^Thought:/i.test(line))      { flush(); currentType = 'thought';  currentLines.push(line.replace(/^Thought:\s*/i, '')); }
+            else if (/^Action:/i.test(line))  { flush(); currentType = 'action';   currentLines.push(line.replace(/^Action:\s*/i, '')); }
+            else if (/^Observation:/i.test(line)) { flush(); currentType = 'observe';  currentLines.push(line.replace(/^Observation:\s*/i, '')); }
+            else currentLines.push(line);
+          }
+          flush();
+          stepCount = (thinkingRaw.match(/^Thought:/gim) || []).length;
+        }
+
+        const runId = msg.meta?.run_id || '';
+        const duration = msg.meta?.duration_ms ?? 0;
+        const steps = msg.meta?.steps ?? stepCount;
+
+        msgEl.innerHTML = `
+          <div class="message-avatar">⚡</div>
+          <div class="message-body">
+            <div class="message-meta">Hermes · ${now}</div>
+            <div class="message-bubble message-bubble-hermes"></div>
+            <div class="message-actions">
+              ${runId ? `
+                <button class="action-btn" id="like-${runId}" onclick="feedback('${runId}', 5, this)">👍</button>
+                <button class="action-btn" id="dislike-${runId}" onclick="feedback('${runId}', 1, this)">👎</button>
+                <span class="steps-badge">${steps} steps · ${duration}ms</span>
+              ` : ''}
+            </div>
+          </div>
+        `;
+        const bubble = msgEl.querySelector('.message-bubble');
+        
+        if (stepsHtml) {
+          const details = document.createElement('details');
+          details.className = 'thinking-block';
+          details.innerHTML = `
+            <summary>
+              🧠 Reasoning &nbsp;·&nbsp;
+              <span style="opacity:.6">${stepCount} step${stepCount !== 1 ? 's' : ''} · ${duration}ms</span>
+            </summary>
+            <div class="thinking-content">${stepsHtml}</div>
+          `;
+          bubble.appendChild(details);
+        }
+
+        const answerDiv = document.createElement('div');
+        answerDiv.className = 'answer-block';
+        answerDiv.innerHTML = formatAnswer(answerText);
+        bubble.appendChild(answerDiv);
+
+        area.appendChild(msgEl);
+      }
+    });
+    scrollToBottom();
+  }
+
   // ── Health check ──────────────────────────────────────────────
   async function checkHealth() {
     try {
@@ -801,6 +956,7 @@
       updateStatus('error', 'Offline');
     }
   }
+
 
   function updateStatus(state, text) {
     const dot = document.getElementById('status-dot');
@@ -875,6 +1031,14 @@
     // Add user message
     addMessage('user', escapeHtml(text));
 
+    // Save to history
+    messagesHistory.push({
+      role: 'user',
+      content: text,
+      timestamp: Date.now()
+    });
+    saveSessionHistory(chat.sessionId);
+
     // Add hermes typing bubble
     currentMessageEl = addTypingIndicator();
     currentMessageEl.innerHTML = `
@@ -931,33 +1095,23 @@
 
   // ── Session management ────────────────────────────────────────
   function clearChat() {
-    document.getElementById('messages-area').innerHTML = `
-      <div class="welcome-screen" id="welcome-screen">
-        <div class="welcome-icon">⚡</div>
-        <h2 class="welcome-title">Hello, I'm Hermes</h2>
-        <p class="welcome-sub">Your personal AI assistant. Ask me anything about your projects, emails, and activities.</p>
-        <div class="starter-grid">
-          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What projects are active right now?">
-            <div class="starter-card-icon">◈</div>
-            <div class="starter-card-title">Project Status</div>
-            <div class="starter-card-desc">See all active projects and progress</div>
-          </div>
-          <div class="starter-card" onclick="sendStarter(this.dataset.msg)" data-msg="What are my open tasks this week?">
-            <div class="starter-card-icon">✓</div>
-            <div class="starter-card-title">Open Tasks</div>
-            <div class="starter-card-desc">Review and prioritize your task list</div>
-          </div>
-        </div>
-      </div>
-    `;
+    messagesHistory = [];
+    if (chat.sessionId) {
+      saveSessionHistory(chat.sessionId);
+    }
+    renderDefaultWelcome();
   }
 
   function newSession() {
+    if (chat.sessionId) {
+      localStorage.removeItem('hermes_chat_history_' + chat.sessionId);
+    }
     chat.sessionId = null;
     localStorage.removeItem('hermes_session_id');
     clearChat();
     document.getElementById('session-id-display').textContent = '';
   }
+
 
   // ── Utils ─────────────────────────────────────────────────────
   function escapeHtml(str) {

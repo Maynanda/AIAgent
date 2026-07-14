@@ -3,8 +3,104 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reports — ARIA / Hermes</title>
+  <title>Reports & Workspace Weekly — ARIA / Hermes</title>
   <link rel="stylesheet" href="/assets/css/main.css">
+  <style>
+    .reports-layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      margin-top: 20px;
+    }
+    @media (max-width: 1024px) {
+      .reports-layout { grid-template-columns: 1fr; }
+    }
+    
+    .panel-title {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding-bottom: 8px;
+    }
+
+    .report-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      transition: all var(--transition-fast);
+    }
+    .report-card:hover {
+      border-color: var(--border-accent);
+      background: rgba(255,255,255,0.03);
+    }
+
+    /* Comms & Tasks lists */
+    .weekly-section {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .comm-item {
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      margin-bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .comm-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .comm-subject {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+    .comm-summary {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .sentiment-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .sentiment-positive { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .sentiment-negative { background: rgba(239,68,68,0.15); color: #f87171; }
+    .sentiment-neutral  { background: rgba(255,255,255,0.08); color: #ccc; }
+
+    .weekly-task-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+  </style>
 </head>
 <body>
 <div class="app-layout">
@@ -45,17 +141,52 @@
   <main class="main-content">
     <div class="page-header">
       <div>
-        <h1 class="page-title">Weekly Reports</h1>
-        <p class="page-subtitle">AI-synthesized summaries of your projects, emails, and activities</p>
+        <h1 class="page-title">Weekly Summaries & Reports</h1>
+        <p class="page-subtitle">Historical HTML email reports alongside live weekly communication digests and task board</p>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="generateReport()">⚡ Generate Report</button>
+      <button class="btn btn-primary btn-sm" onclick="generateReport()" id="btnGenerate">⚡ Generate &amp; Email Report</button>
     </div>
 
     <div class="page-body">
-      <div id="reports-list" class="stagger-children">
-        <div style="text-align:center; padding:40px; color:var(--text-muted);">
-          Loading reports...
+      <div class="reports-layout">
+        
+        <!-- Left: Generated Reports List -->
+        <div>
+          <div class="panel-title">📂 Generated Reports</div>
+          <div id="reports-list">
+            <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">
+              Loading historical reports...
+            </div>
+          </div>
         </div>
+
+        <!-- Right: Weekly workspace summary -->
+        <div>
+          
+          <!-- Communication summary -->
+          <div class="weekly-section">
+            <div class="panel-title" style="border:none;margin-bottom:0">📧 Weekly Communications Digest (Last 7d)</div>
+            <p style="font-size:12px;color:var(--text-muted);margin:4px 0 16px">Key messages and emails summarized by Hermes</p>
+            <div id="comms-digest">
+              <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">
+                Loading weekly emails...
+              </div>
+            </div>
+          </div>
+
+          <!-- Weekly task board -->
+          <div class="weekly-section">
+            <div class="panel-title" style="border:none;margin-bottom:0">📋 Weekly Workspace Action Board</div>
+            <p style="font-size:12px;color:var(--text-muted);margin:4px 0 16px">Active tasks currently in progress or planned</p>
+            <div id="weekly-action-board">
+              <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">
+                Loading weekly tasks...
+              </div>
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </div>
   </main>
@@ -63,63 +194,146 @@
 
 <script src="/assets/js/api.js"></script>
 <script>
+  let projectsMap = {};
+
+  async function initPage() {
+    await loadProjects();
+    loadReports();
+    loadCommsDigest();
+    loadWeeklyTasks();
+  }
+
+  async function loadProjects() {
+    try {
+      const projects = await HermesAPI.get('/api/projects');
+      projects.forEach(p => {
+        projectsMap[p.id] = p.title;
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function loadReports() {
     const list = document.getElementById('reports-list');
     try {
       const reports = await HermesAPI.get('/api/reports');
       if (reports.length === 0) {
         list.innerHTML = `
-          <div class="card" style="text-align:center; padding:40px;">
-            <div style="font-size:36px; margin-bottom:16px;">≡</div>
-            <div style="font-size:16px; color:var(--text-secondary); margin-bottom:12px;">No reports generated yet</div>
-            <div style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">
-              Reports are generated every Sunday at 8AM, or you can trigger one manually.
+          <div class="card" style="text-align:center; padding:24px;">
+            <div style="font-size:32px; margin-bottom:12px;">≡</div>
+            <div style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">No reports yet</div>
+            <div style="font-size:12px; color:var(--text-muted);">
+              Reports are auto-generated and emailed on Sundays.
             </div>
-            <button class="btn btn-primary btn-sm" onclick="generateReport()">Generate First Report</button>
           </div>
         `;
         return;
       }
 
-      list.innerHTML = '';
-      reports.forEach(r => {
-        const card = document.createElement('div');
-        card.className = 'card animate-fade-up';
-        card.style.marginBottom = '12px';
-        card.innerHTML = `
+      list.innerHTML = reports.map(r => `
+        <div class="report-card">
           <div class="flex items-center justify-between">
             <div>
-              <div style="font-family:var(--font-display); font-size:16px; font-weight:600; margin-bottom:4px;">
-                Weekly Report — ${r.date}
+              <div style="font-weight:600; color:var(--text-primary); font-size:13px;">
+                Weekly Summary — ${r.date}
               </div>
-              <div style="font-size:12px; color:var(--text-muted);">${r.size_kb} KB · HTML</div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">${r.size_kb} KB · HTML Email</div>
             </div>
-            <a href="/api/reports/${r.filename}" target="_blank" class="btn btn-secondary btn-sm">View Report →</a>
+            <a href="/api/reports/${r.filename}" target="_blank" class="btn btn-secondary btn-sm" style="padding:4px 8px;font-size:11px;">View →</a>
           </div>
-        `;
-        list.appendChild(card);
-      });
+        </div>
+      `).join('');
     } catch (e) {
-      list.innerHTML = '<div style="color:var(--status-blocked);">Failed to load reports</div>';
+      list.innerHTML = '<div style="color:var(--status-blocked);font-size:12px;">Failed to load reports</div>';
+    }
+  }
+
+  async function loadCommsDigest() {
+    const feed = document.getElementById('comms-digest');
+    try {
+      const emails = await HermesAPI.get('/api/emails?limit=30');
+      // Filter last 7 days
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const recent = emails.filter(e => e.received_at && new Date(e.received_at).getTime() >= oneWeekAgo);
+
+      if (recent.length === 0) {
+        feed.innerHTML = `
+          <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:12px;">
+            No emails received in the last 7 days.
+          </div>`;
+        return;
+      }
+
+      feed.innerHTML = recent.map(e => {
+        const sentiment = (e.sentiment || 'neutral').toLowerCase();
+        const sentClass = sentiment === 'positive' ? 'sentiment-positive' : sentiment === 'negative' ? 'sentiment-negative' : 'sentiment-neutral';
+        return `
+          <div class="comm-item">
+            <div class="comm-header">
+              <span>From: <strong>${e.sender}</strong></span>
+              <span class="sentiment-badge ${sentClass}">${sentiment}</span>
+            </div>
+            <div class="comm-subject">${e.subject}</div>
+            <div class="comm-summary">${e.summary || 'No summary available.'}</div>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      feed.innerHTML = '<div style="color:var(--status-blocked);font-size:12px;">Failed to load communications</div>';
+    }
+  }
+
+  async function loadWeeklyTasks() {
+    const feed = document.getElementById('weekly-action-board');
+    try {
+      const tasks = await HermesAPI.get('/api/tasks');
+      const openTasks = tasks.filter(t => t.status !== 'done');
+
+      if (openTasks.length === 0) {
+        feed.innerHTML = `
+          <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:12px;">
+            All weekly workspace actions are completed!
+          </div>`;
+        return;
+      }
+
+      feed.innerHTML = openTasks.map(t => {
+        const projName = t.project_id ? (projectsMap[t.project_id] || 'Project') : 'Independent';
+        const projLink = t.project_id ? `<span style="color:var(--accent-primary);font-size:11px">◈ ${projName}</span>` : '<span style="color:var(--text-muted);font-size:11px">Standalone</span>';
+        return `
+          <div class="weekly-task-item">
+            <div>
+              <div style="font-weight:600;color:var(--text-primary)">${t.title}</div>
+              <div style="margin-top:2px">${projLink}</div>
+            </div>
+            <div>
+              ${HermesUtils.priorityLabel(t.priority)}
+              ${HermesUtils.statusBadge(t.status)}
+            </div>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      feed.innerHTML = '<div style="color:var(--status-blocked);font-size:12px;">Failed to load weekly tasks</div>';
     }
   }
 
   async function generateReport() {
-    const btn = event.target;
+    const btn = document.getElementById('btnGenerate');
     btn.disabled = true;
     btn.textContent = 'Generating...';
     try {
       const res = await HermesAPI.post('/api/reports/generate', {});
-      alert(`Report generated! File: ${res.path}`);
+      alert(`⚡ Report generated and emailed successfully!\nFile: ${res.path}`);
       loadReports();
     } catch (e) {
-      alert('Report generation failed. Make sure Hermes is running.');
+      alert('Report generation failed. Make sure Hermes backend is running.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⚡ Generate & Email Report';
     }
-    btn.disabled = false;
-    btn.textContent = '⚡ Generate Report';
   }
 
-  loadReports();
+  initPage();
 </script>
 </body>
 </html>

@@ -62,9 +62,14 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Tasks & Actions</h1>
-        <p class="page-subtitle">Track, filter, and prioritize your action items across all projects</p>
+        <p class="page-subtitle">Track, filter, and prioritize your action items across all projects and communications</p>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="showCreateTaskModal()">+ Add Task</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="autoGenerateTasks()" id="btnAutoGenerate" style="background:#059669;color:#fff;border:none">
+          ⚡ Auto-Generate from AI &amp; Emails
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="showCreateTaskModal()">+ Add Task</button>
+      </div>
     </div>
 
     <div class="page-body">
@@ -78,6 +83,12 @@
         <select id="filter-project" class="input" style="width: 200px;" onchange="loadTasks()">
           <option value="">All Projects</option>
         </select>
+        <select id="filter-source" class="input" style="width: 180px;" onchange="loadTasks()">
+          <option value="">All Sources</option>
+          <option value="manual">👤 Created Manually</option>
+          <option value="agent">🤖 Auto-Generated (AI)</option>
+          <option value="email">📧 From Emails</option>
+        </select>
       </div>
 
       <div class="tasks-grid">
@@ -87,15 +98,17 @@
             <thead>
               <tr>
                 <th>Task Details</th>
-                <th>Status</th>
+                <th>Source</th>
+                <th>Project Link</th>
                 <th>Priority</th>
                 <th>Due Date</th>
+                <th>Status</th>
                 <th style="text-align: right;">Action</th>
               </tr>
             </thead>
             <tbody id="tasks-table-body">
               <tr>
-                <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading tasks...</td>
+                <td colspan="7" style="text-align: center; color: var(--text-muted);">Loading tasks...</td>
               </tr>
             </tbody>
           </table>
@@ -110,7 +123,7 @@
               <span id="metric-pending" class="font-mono">0</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-muted">Completed (7d)</span>
+              <span class="text-muted">Completed</span>
               <span id="metric-completed" class="font-mono">0</span>
             </div>
           </div>
@@ -162,6 +175,8 @@
 
 <script src="/assets/js/api.js"></script>
 <script>
+  let projectsMap = {};
+
   async function initPage() {
     await loadProjectsDropdown();
     await loadTasks();
@@ -174,6 +189,7 @@
       const createProj = document.getElementById('new-task-project');
       
       projects.forEach(p => {
+        projectsMap[p.id] = p.title;
         const opt1 = new Option(p.title, p.id);
         const opt2 = new Option(p.title, p.id);
         filterProj.add(opt1);
@@ -187,6 +203,7 @@
   async function loadTasks() {
     const status = document.getElementById('filter-status').value;
     const projectId = document.getElementById('filter-project').value;
+    const source = document.getElementById('filter-source').value;
     
     let url = '/api/tasks';
     const params = [];
@@ -195,12 +212,17 @@
     if (params.length > 0) url += `?${params.join('&')}`;
 
     try {
-      const tasks = await HermesAPI.get(url);
+      let tasks = await HermesAPI.get(url);
       const tbody = document.getElementById('tasks-table-body');
       tbody.innerHTML = '';
 
+      // Client-side source filtering
+      if (source) {
+        tasks = tasks.filter(t => t.source === source);
+      }
+
       if (tasks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No tasks found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No tasks found.</td></tr>';
         return;
       }
 
@@ -211,15 +233,30 @@
         if (t.status === 'done') completed++;
         else pending++;
 
+        // Source badge layout
+        let sourceBadge = '';
+        if (t.source === 'agent' || t.source === 'ai') {
+          sourceBadge = '<span class="badge badge-ai" style="background:rgba(124,58,237,0.15);color:#a78bfa;font-size:10px;padding:3px 8px;border-radius:12px">🤖 AI</span>';
+        } else if (t.source === 'email') {
+          sourceBadge = '<span class="badge" style="background:rgba(251,146,60,0.15);color:#fb923c;font-size:10px;padding:3px 8px;border-radius:12px">📧 Email</span>';
+        } else {
+          sourceBadge = '<span class="badge" style="background:rgba(255,255,255,0.06);color:#ccc;font-size:10px;padding:3px 8px;border-radius:12px">👤 Manual</span>';
+        }
+
+        const projectName = t.project_id ? (projectsMap[t.project_id] || 'Linked Project') : '—';
+        const projectLink = t.project_id ? `<a href="/projects" onclick="localStorage.setItem('lastProject','${t.project_id}')" style="color:var(--accent-primary);text-decoration:none;font-weight:500;">◈ ${projectName}</a>` : '—';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>
             <div style="font-weight: 600; color: var(--text-primary);">${t.title}</div>
             <div style="font-size: 11px; color: var(--text-muted);">${t.description || ''}</div>
           </td>
-          <td>${HermesUtils.statusBadge(t.status)}</td>
+          <td>${sourceBadge}</td>
+          <td>${projectLink}</td>
           <td>${HermesUtils.priorityLabel(t.priority)}</td>
           <td>${HermesUtils.formatDate(t.due_date)}</td>
+          <td>${HermesUtils.statusBadge(t.status)}</td>
           <td style="text-align: right;">
             ${t.status !== 'done' ? `<button class="btn btn-secondary btn-sm" onclick="completeTask('${t.id}')" style="padding: 4px 8px; font-size: 11px;">✓ Complete</button>` : ''}
           </td>
@@ -231,6 +268,23 @@
       document.getElementById('metric-completed').textContent = completed;
     } catch (e) {
       console.error(e);
+    }
+  }
+
+  async function autoGenerateTasks() {
+    const btn = document.getElementById('btnAutoGenerate');
+    btn.innerHTML = '⚡ Generating…';
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/tasks/auto-generate', { method: 'POST' });
+      const data = await res.json();
+      alert(`⚡ Scan complete!\n- Scanned activities: ${data.scanned_activities}\n- Scanned emails: ${data.scanned_emails}\n- Auto-generated tasks: ${data.tasks_generated}`);
+      loadTasks();
+    } catch (e) {
+      alert("Failed to auto-generate tasks.");
+    } finally {
+      btn.innerHTML = '⚡ Auto-Generate from AI &amp; Emails';
+      btn.disabled = false;
     }
   }
 

@@ -213,3 +213,65 @@ async def delete_task(
     await db.delete(task)
     await db.commit()
     return JSONResponse({"status": "ok", "message": "Task deleted successfully"})
+
+
+@router.post("/auto-generate")
+async def auto_generate_tasks(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    1. Scan recent emails (last 7 days) and activities for hidden tasks.
+    2. Auto-promote pending insights (confidence >= 0.6) to real Tasks.
+    """
+    from services.project_intelligence import extract_insights_from_text, accept_insight
+    from database.models import Activity, Email, ProjectInsight
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+
+    cutoff = datetime.utcnow() - timedelta(days=7)
+
+    # Scan activities
+    acts_stmt = select(Activity).where(Activity.occurred_at >= cutoff)
+    acts_res = await db.execute(acts_stmt)
+    activities = acts_res.scalars().all()
+    for act in activities:
+        try:
+            await extract_insights_from_text(act.content, "activity", str(act.id), db)
+        except Exception:
+            pass
+
+    # Scan emails
+    emails_stmt = select(Email).where(Email.received_at >= cutoff)
+    emails_res = await db.execute(emails_stmt)
+    emails = emails_res.scalars().all()
+    for email in emails:
+        try:
+            text = f"{email.subject or ''}\n{email.body or ''}"
+            await extract_insights_from_text(text, "email", str(email.id), db)
+            email.is_processed = True
+        except Exception:
+            pass
+
+    await db.commit()
+
+    # Query all pending insights with confidence >= 0.6
+    insights_stmt = select(ProjectInsight).where(ProjectInsight.status == "pending", ProjectInsight.confidence >= 0.6)
+    insights_res = await db.execute(insights_stmt)
+    insights = insights_res.scalars().all()
+
+    created_count = 0
+    for insight in insights:
+        try:
+            task = await accept_insight(insight.id, db)
+            if task:
+                created_count += 1
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "scanned_activities": len(activities),
+        "scanned_emails": len(emails),
+        "tasks_generated": created_count
+    }
+

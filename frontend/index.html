@@ -504,49 +504,115 @@
       document.getElementById('status-label').textContent = 'Hermes offline';
     }
 
-    // Load stats (will be wired to real API in Phase 3)
-    loadMockData();
+    await loadRealData();
   }
 
-  function loadMockData() {
-    // Placeholder stats — will be replaced by real API calls in Phase 3
-    document.getElementById('stat-projects').textContent = '0';
-    document.getElementById('stat-projects-delta').textContent = '+ Add your first project';
-    document.getElementById('stat-tasks').textContent = '0';
-    document.getElementById('stat-tasks-delta').textContent = 'No open tasks';
-    document.getElementById('stat-entities').textContent = '0';
-    document.getElementById('stat-entities-delta').textContent = 'Graph empty — start chatting!';
-    document.getElementById('stat-emails').textContent = '0';
-    document.getElementById('badge-projects').textContent = '0';
-    document.getElementById('badge-emails').textContent = '0';
-    document.getElementById('badge-tools').textContent = '0';
+  async function loadRealData() {
+    try {
+      const data = await HermesAPI.get('/api/dashboard/summary');
+      const c = data.counters || {};
 
-    // Empty state for projects
-    document.getElementById('projects-grid').innerHTML = `
-      <div class="project-card" style="border-style:dashed; cursor:default; text-align:center; padding:32px 20px;">
-        <div style="font-size:32px; margin-bottom:10px;">◈</div>
-        <div style="font-size:14px; color:var(--text-secondary); margin-bottom:12px;">No projects yet</div>
-        <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
-          Ask Hermes to create one, or Hermes will auto-detect projects from your emails.
-        </div>
-        <a href="/chat" class="btn btn-primary btn-sm">Talk to Hermes</a>
-      </div>
-    `;
+      // Counters
+      document.getElementById('stat-projects').textContent = c.active_projects ?? 0;
+      document.getElementById('stat-projects-delta').textContent =
+        c.active_projects ? `${c.active_projects} active project${c.active_projects !== 1 ? 's' : ''}` : '+ Add your first project';
 
-    // Empty activity feed
-    document.getElementById('activity-feed').innerHTML = `
-      <div style="text-align:center; padding:20px 0; color:var(--text-muted); font-size:13px;">
-        <div style="font-size:24px; margin-bottom:8px;">◉</div>
-        No activity yet.<br/>Record your first note or import emails.
-      </div>
-    `;
+      document.getElementById('stat-tasks').textContent = c.open_tasks ?? 0;
+      document.getElementById('stat-tasks-delta').textContent =
+        c.open_tasks ? `${c.open_tasks} open task${c.open_tasks !== 1 ? 's' : ''}` : 'No open tasks';
 
-    document.getElementById('graph-summary').textContent = '0 entities · 0 relations';
+      document.getElementById('stat-entities').textContent = c.graph_entities ?? 0;
+      document.getElementById('stat-entities-delta').textContent =
+        c.graph_entities ? `${c.graph_entities} knowledge nodes` : 'Graph empty — start chatting!';
+
+      document.getElementById('stat-emails').textContent = c.emails_processed ?? 0;
+
+      // Badge counts in nav
+      if (document.getElementById('badge-projects'))
+        document.getElementById('badge-projects').textContent = c.active_projects ?? 0;
+      if (document.getElementById('badge-emails'))
+        document.getElementById('badge-emails').textContent = c.emails_processed ?? 0;
+
+      // Projects grid
+      const grid = document.getElementById('projects-grid');
+      if (data.projects && data.projects.length > 0) {
+        grid.innerHTML = data.projects.map(p => {
+          const pct = p.progress || 0;
+          const statusColor = p.status === 'active' ? '#4ade80' : p.status === 'paused' ? '#facc15' : '#818cf8';
+          return `
+            <a href="/projects" class="project-card" onclick="localStorage.setItem('lastProject','${p.id}')">
+              <div class="project-card-header">
+                <div class="project-name">${p.title}</div>
+                <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.08);color:${statusColor}">${p.status}</span>
+              </div>
+              ${p.description ? `<div class="project-desc">${p.description}</div>` : ''}
+              <div class="project-progress-label">
+                <span>Progress</span><span>${pct}%</span>
+              </div>
+              <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px;margin-top:4px">
+                <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#7c3aed,#4f46e5);border-radius:2px;transition:width .6s"></div>
+              </div>
+              <div class="project-meta">
+                <span>P${p.priority || 3}</span>
+                ${p.target_date ? `<span>📅 ${p.target_date}</span>` : ''}
+              </div>
+            </a>`;
+        }).join('');
+        // Add "New project" card at end
+        grid.innerHTML += `
+          <a href="/projects" class="project-card" style="border-style:dashed;text-align:center;padding:32px 20px;cursor:pointer">
+            <div style="font-size:28px;margin-bottom:8px">+</div>
+            <div style="font-size:13px;color:var(--text-muted)">New project</div>
+          </a>`;
+      } else {
+        grid.innerHTML = `
+          <div class="project-card" style="border-style:dashed;cursor:default;text-align:center;padding:32px 20px;">
+            <div style="font-size:32px;margin-bottom:10px">◈</div>
+            <div style="font-size:14px;color:var(--text-secondary);margin-bottom:12px">No projects yet</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+              Ask Hermes to create one, or start from the Projects page.
+            </div>
+            <a href="/projects" class="btn btn-primary btn-sm">Go to Projects</a>
+          </div>`;
+      }
+
+      // Activity feed
+      const feed = document.getElementById('activity-feed');
+      if (data.activities && data.activities.length > 0) {
+        const dotColors = { note:'#818cf8', meeting:'#34d399', email:'#fb923c', call:'#f472b6', update:'#facc15' };
+        feed.innerHTML = data.activities.map(a => {
+          const color = dotColors[a.type] || '#818cf8';
+          const time = a.occurred_at ? new Date(a.occurred_at).toLocaleDateString('en', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+          return `
+            <div class="activity-item">
+              <div class="activity-dot" style="background:${color}"></div>
+              <div class="activity-content">
+                <div style="font-size:13px;color:var(--text-primary);line-height:1.4">${a.content.slice(0, 90)}${a.content.length > 90 ? '…' : ''}</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${a.type} · ${time}</div>
+              </div>
+            </div>`;
+        }).join('');
+      } else {
+        feed.innerHTML = `
+          <div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:13px">
+            <div style="font-size:24px;margin-bottom:8px">◉</div>
+            No activity yet.<br/>Record your first note or import emails.
+          </div>`;
+      }
+
+      // Graph summary
+      if (document.getElementById('graph-summary'))
+        document.getElementById('graph-summary').textContent = `${c.graph_entities ?? 0} entities`;
+
+    } catch (e) {
+      console.error('Dashboard data load failed:', e);
+    }
   }
 
   // Init
   loadDashboard();
   setInterval(loadDashboard, 30000); // refresh every 30s
+
 </script>
 </body>
 </html>

@@ -441,6 +441,61 @@
     </div>
   </div>
 
+  <!-- ── Edit Project Modal ── -->
+  <div class="modal-overlay" id="editProjectModal">
+    <div class="modal" style="width:480px">
+      <div class="modal-title">✏️ Edit Project Settings</div>
+      <div class="modal-sub">Update project metadata and roadmap parameters.</div>
+      
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Project Title</label>
+        <input type="text" class="form-input" id="editProjTitle">
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Description</label>
+        <textarea class="form-input" id="editProjDesc" rows="3" style="font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-select" id="editProjStatus">
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <select class="form-select" id="editProjPriority">
+            <option value="1">1 - Critical</option>
+            <option value="2">2 - High</option>
+            <option value="3">3 - Medium</option>
+            <option value="4">4 - Low</option>
+            <option value="5">5 - Backlog</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:16px">
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input type="date" class="form-input" id="editProjStart">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Target Date</label>
+          <input type="date" class="form-input" id="editProjTarget">
+        </div>
+      </div>
+
+      <div class="modal-actions" style="justify-content:space-between">
+        <button class="btn-cancel" onclick="deleteProject()" style="color:#f87171;border-color:rgba(248,113,113,.3)">🗑 Delete Project</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn-cancel" onclick="closeEditProjectModal()">Cancel</button>
+          <button class="btn-generate" onclick="saveProjectEdit()">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentProjectId = null;
     let currentProjectData = null;
@@ -535,6 +590,7 @@
               </div>
             </div>
             <div class="header-actions">
+              <button class="btn-action" onclick="openEditProjectModal()">✏️ Edit Project</button>
               <button class="btn-action" onclick="refreshBlocks()" id="btnRefresh">🔄 Refresh</button>
               <button class="btn-auto-update" onclick="autoUpdateFromComms()" id="btnAutoUpdate">
                 ⚡ Auto-Update from Emails &amp; Activities
@@ -991,6 +1047,9 @@
     document.getElementById('draftModal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('draftModal')) closeDraftModal();
     });
+    document.getElementById('editProjectModal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('editProjectModal')) closeEditProjectModal();
+    });
 
     // ── Toast ─────────────────────────────────────────────────────────────────
     function showToast(msg, type = '') {
@@ -1015,6 +1074,76 @@
         setTimeout(() => selectProject(p.id), 400);
         showToast(`✅ Project "${title}" created`, 'success');
       });
+    }
+
+    // ── Edit Project Modal ───────────────────────────────────────────────────
+    function openEditProjectModal() {
+      if (!currentProjectId || !currentProjectData) return;
+      const p = currentProjectData.proj;
+      document.getElementById('editProjTitle').value = p.title || '';
+      document.getElementById('editProjDesc').value = p.description || '';
+      document.getElementById('editProjStatus').value = p.status || 'active';
+      document.getElementById('editProjPriority').value = p.priority || '3';
+      document.getElementById('editProjStart').value = p.start_date || '';
+      document.getElementById('editProjTarget').value = p.target_date || '';
+      document.getElementById('editProjectModal').classList.add('open');
+    }
+
+    function closeEditProjectModal() {
+      document.getElementById('editProjectModal').classList.remove('open');
+    }
+
+    async function saveProjectEdit() {
+      if (!currentProjectId) return;
+      const title = document.getElementById('editProjTitle').value.trim();
+      if (!title) return alert('Project title is required');
+
+      const body = {
+        title,
+        description: document.getElementById('editProjDesc').value.trim(),
+        status: document.getElementById('editProjStatus').value,
+        priority: parseInt(document.getElementById('editProjPriority').value),
+        start_date: document.getElementById('editProjStart').value || null,
+        target_date: document.getElementById('editProjTarget').value || null,
+      };
+
+      try {
+        const res = await fetch(`/api/projects/${currentProjectId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        closeEditProjectModal();
+        showToast('✅ Project updated', 'success');
+        
+        // Reload projects list and details
+        await loadProjects();
+        await selectProject(currentProjectId);
+      } catch (err) {
+        showToast('Failed to save project settings', 'error');
+      }
+    }
+
+    async function deleteProject() {
+      if (!currentProjectId || !confirm('Are you sure you want to delete this project? This will also delete all its Kanban tasks.')) return;
+      try {
+        const res = await fetch(`/api/projects/${currentProjectId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(await res.text());
+        closeEditProjectModal();
+        showToast('Project deleted', '');
+        currentProjectId = null;
+        currentProjectData = null;
+        await loadProjects();
+        document.getElementById('detailPanel').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <div style="font-size:16px;font-weight:600;color:#444;">Select a project</div>
+            <div class="empty-state-text">Pick a project from the sidebar to view its status and leader blocks.</div>
+          </div>`;
+      } catch (err) {
+        showToast('Failed to delete project', 'error');
+      }
     }
   </script>
 </body>
