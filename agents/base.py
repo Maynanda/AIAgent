@@ -120,6 +120,7 @@ Answer: <your answer — only when Action is FINAL_ANSWER>
         user_input: str,
         context: str = "",
         session_id: str | None = None,
+        images: list[Any] | None = None,
     ) -> AgentResult:
         """Execute the ReAct loop until completion or max iterations."""
         if session_id:
@@ -138,8 +139,11 @@ Answer: <your answer — only when Action is FINAL_ANSWER>
                 {"role": "user", "content": prompt},
             ]
 
+            # Only attach images on the first iteration (for context understanding)
+            iter_images = images if iteration == 0 else None
+
             # Generate next step
-            raw_response = await self.llm.generate(messages, max_new_tokens=1024)
+            raw_response = await self.llm.generate(messages, images=iter_images, max_new_tokens=1024)
             logger.debug(f"[{self.agent_type}] Iteration {iteration}: {raw_response[:200]}")
 
             # Parse the response

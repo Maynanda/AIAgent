@@ -111,10 +111,12 @@ class OrchestratorAgent(BaseAgent):
         user_input: str,
         context: str = "",
         session_id: str | None = None,
+        images: list[Any] | None = None,
     ) -> AsyncGenerator[str, None]:
         """
         Full streaming ReAct loop — yields tokens live.
         Intermediate thoughts/actions are streamed so the UI can show reasoning.
+        Images are sent on the first iteration only for visual context grounding.
         """
         if session_id:
             self.session_id = session_id
@@ -134,9 +136,10 @@ class OrchestratorAgent(BaseAgent):
                 {"role": "user", "content": prompt},
             ]
 
-            # Stream reasoning tokens
+            # Stream reasoning tokens — images only sent on first pass
+            iter_images = images if iteration == 0 else None
             raw_response = ""
-            async for token in self.llm.stream_generate(messages, max_new_tokens=1024):
+            async for token in self.llm.stream(messages, images=iter_images, max_new_tokens=1024):
                 raw_response += token
                 yield token
 

@@ -1,16 +1,18 @@
 """
 ARIA / Hermes — Chat WebSocket Route
 Handles real-time streaming chat with the Hermes orchestrator.
+Supports multimodal vision inputs: images can be sent as base64 or raw bytes.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +36,8 @@ async def chat_websocket(
     WebSocket endpoint for streaming chat with Hermes.
 
     Protocol:
-      Client sends: {"message": "...", "session_id": "optional-uuid"}
+      Client sends JSON: {"message": "...", "session_id": "optional-uuid"}
+      OR sends binary: first receive the image bytes, then a JSON with {"message": ..., "has_image": true}
       Server streams: {"type": "token", "content": "..."}
                       {"type": "done", "metadata": {...}}
                       {"type": "error", "content": "..."}
@@ -45,9 +48,20 @@ async def chat_websocket(
     session_id = str(uuid.uuid4())
 
     try:
+        pending_image_bytes: bytes | None = None
         while True:
-            # Receive message
-            raw = await websocket.receive_text()
+            # Accept either text (JSON) or binary (image bytes)
+            msg = await websocket.receive()
+
+            if msg["type"] == "websocket.receive":
+                if "bytes" in msg and msg["bytes"]:
+                    # Raw image bytes pre-buffered for next text message
+                    pending_image_bytes = msg["bytes"]
+                    continue
+                raw = msg.get("text", "")
+            else:
+                continue
+
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
@@ -56,6 +70,17 @@ async def chat_websocket(
             user_message = data.get("message", "").strip()
             if not user_message:
                 continue
+
+            # Collect images: from pending binary frame or base64 field
+            images: list[bytes] = []
+            if pending_image_bytes:
+                images.append(pending_image_bytes)
+                pending_image_bytes = None
+            if data.get("image_b64"):
+                try:
+                    images.append(base64.b64decode(data["image_b64"]))
+                except Exception:
+                    pass
 
             # Use existing session or create new
             if data.get("session_id"):
@@ -89,6 +114,7 @@ async def chat_websocket(
                     user_input=user_message,
                     context=context,
                     session_id=session_id,
+                    images=images or None,
                 ):
                     # Check for metadata marker
                     if chunk.startswith("\n\n__DONE__:"):
@@ -149,35 +175,45 @@ async def chat_websocket(
 
 @router.post("/message")
 async def chat_http(
-    body: dict[str, Any],
+    message: str = Form(...),
+    session_id: str = Form(default=""),
+    image: UploadFile | None = File(default=None),
     db: AsyncSession = Depends(get_db),
     llm: HermesLLM = Depends(get_llm),
 ) -> JSONResponse:
     """
-    HTTP fallback for chat (non-streaming).
-    Body: {"message": "...", "session_id": "optional"}
+    HTTP fallback for chat (non-streaming), supports optional image attachment.
+    Send as multipart/form-data: message + optional image file.
     """
-    user_message = body.get("message", "").strip()
-    session_id = body.get("session_id", str(uuid.uuid4()))
+    user_message = message.strip()
+    sid = session_id or str(uuid.uuid4())
 
     if not user_message:
         return JSONResponse({"error": "message is required"}, status_code=400)
 
-    memory = MemoryManager(session_id=session_id, db=db)
+    # Read attached image (if any)
+    images: list[bytes] = []
+    if image:
+        image_bytes = await image.read()
+        if image_bytes:
+            images.append(image_bytes)
+
+    memory = MemoryManager(session_id=sid, db=db)
     memory.add_short_term(f"User: {user_message}")
-    
+
     from rag.context_builder import build_agent_context
-    context = await build_agent_context(query=user_message, session_id=session_id, db=db)
+    context = await build_agent_context(query=user_message, session_id=sid, db=db)
 
     agent = OrchestratorAgent(llm=llm)
     result = await agent.run(
         user_input=user_message,
         context=context,
-        session_id=session_id,
+        session_id=sid,
+        images=images or None,
     )
 
     return JSONResponse({
-        "session_id": session_id,
+        "session_id": sid,
         "response": result.result,
         "steps": len(result.steps),
         "duration_ms": result.duration_ms,

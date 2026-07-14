@@ -98,6 +98,63 @@ async def record_activity(
     }
 
 
+@router.post("/with-image")
+async def record_activity_with_image(
+    content: str = Form(...),
+    activity_type: str = Form(default="note"),
+    image: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Record an activity with an attached image.
+    Hermes uses Qwen's vision to describe the image and merge it with the text note.
+    """
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image file is empty")
+
+    # Ask the vision model to describe the image in context of the note
+    try:
+        from llm.client import llm
+        messages = [
+            {"role": "system", "content": "You are an assistant that describes images concisely in the context of a user's personal notes."},
+            {"role": "user", "content": f"The user wrote this note: '{content}'. Describe what is in the attached image and how it relates to the note. Keep it under 100 words."},
+        ]
+        vision_description = await llm.generate(messages, images=[image_bytes], max_new_tokens=200)
+        enriched_content = f"{content}\n\n[Image description: {vision_description}]"
+    except Exception as e:
+        logger.warning(f"Vision description failed, saving without it: {e}")
+        enriched_content = content
+
+    entity = Entity(
+        type="activity",
+        name=f"{activity_type.capitalize()} (with image) on {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+        description=enriched_content[:300],
+    )
+    db.add(entity)
+    await db.flush()
+
+    activity = Activity(
+        entity_id=entity.id,
+        type=activity_type,
+        content=enriched_content,
+        source="manual_with_image",
+        related_entities=[],
+        occurred_at=datetime.utcnow(),
+        metadata_={"has_image": True, "original_filename": image.filename},
+    )
+    db.add(activity)
+    await db.commit()
+
+    return {
+        "id": activity.id,
+        "entity_id": activity.entity_id,
+        "type": activity.type,
+        "content": activity.content,
+        "vision_enriched": True,
+    }
+
+
 @router.post("/transcribe")
 async def transcribe_audio(
     audio: UploadFile = File(...),
