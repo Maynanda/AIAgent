@@ -14,7 +14,7 @@ ARIA (codename: **Hermes**) is a fully local, self-improving personal AI assista
 | **Local LLM** | Qwen2.5-VL-7B-Instruct via HuggingFace `transformers` with 4-bit GPU quantization |
 | **Knowledge Graph** | PostgreSQL + pgvector — auto-grows from every email, note, and activity |
 | **Hybrid RAG** | Vector search + trigram keyword + 1-hop graph traversal |
-| **Email Integration** | IMAP inbox sync + SMTP send + AI sentiment analysis + reply drafting |
+| **Email Integration** | IMAP sync + SMTP send OR local macOS Outlook desktop app sync + send via AppleScript |
 | **Project Tracker** | Kanban boards, milestones, and progress tracking |
 | **Activity Logger** | Manual notes + Whisper voice-to-text transcription |
 | **Self-Improvement** | Dynamic tool creation sandbox + prompt evolution engine |
@@ -177,10 +177,13 @@ Copy `.env.example` to `.env` and configure:
 | `LLM_DEVICE` | `cuda` or `cpu` |
 | `LLM_LOAD_IN_4BIT` | Enable 4-bit quantization (true/false) |
 | `EMBEDDING_MODEL` | nomic-embed-text-v1.5 |
-| `EMAIL_ADDRESS` | Your Gmail / IMAP email address |
-| `EMAIL_PASSWORD` | App password (use app-specific passwords) |
+| `EMAIL_CLIENT` | Email source client (`imap` or `outlook` for local macOS desktop app) |
+| `EMAIL_ADDRESS` | Your Gmail / IMAP email address (required for IMAP) |
+| `EMAIL_PASSWORD` | App password (required for IMAP) |
 | `EMAIL_IMAP_HOST` | IMAP server (e.g. imap.gmail.com) |
 | `EMAIL_SMTP_HOST` | SMTP server (e.g. smtp.gmail.com) |
+| `EMAIL_SMTP_PORT` | SMTP port (e.g. 587) |
+| `EMAIL_SMTP_USE_TLS` | SMTP TLS enabled (true/false) |
 | `WHISPER_MODEL_SIZE` | base / small / medium / large |
 
 ---
