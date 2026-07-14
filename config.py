@@ -50,6 +50,7 @@ class Settings(BaseSettings):
         )
 
     # ── LLM ──────────────────────────────────────────────────
+    llm_provider: Literal["local", "openai"] = "local"
     llm_model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"
     llm_device: str = "cuda"
     llm_torch_dtype: str = "bfloat16"
@@ -58,6 +59,8 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_top_p: float = 0.9
     llm_cache_dir: str = "./models"
+    llm_api_base: str = "http://localhost:11434/v1"
+    llm_api_key: str = "not-needed"
 
     # ── Embedding ────────────────────────────────────────────
     embed_model_id: str = "nomic-ai/nomic-embed-text-v1.5"

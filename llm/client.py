@@ -1,24 +1,21 @@
 """
 ARIA / Hermes — LLM Client
-Singleton wrapper around Qwen2.5-VL-7B-Instruct via HuggingFace Transformers.
+Singleton wrapper around Qwen2.5-VL-7B-Instruct via HuggingFace Transformers or external OpenAI-compatible API.
 Loaded once at startup, shared across all agents via dependency injection.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import base64
+import json
+from pathlib import Path
 from collections.abc import AsyncGenerator
 from threading import Thread
 from typing import Any
 
 import torch
-from transformers import (
-    AutoProcessor,
-    BitsAndBytesConfig,
-    Qwen2_5_VLForConditionalGeneration,
-    TextIteratorStreamer,
-)
-
+import httpx
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -33,13 +30,16 @@ _DTYPE_MAP = {
 
 class HermesLLM:
     """
-    Singleton LLM client for Qwen2.5-VL-7B-Instruct.
+    Singleton LLM client.
+    Can be run:
+    - Localy via Transformers (loaded directly on GPU).
+    - Remotely via OpenAI-compatible completion APIs (layer 0 model server).
 
     Supports:
-    - Text generation (all agents)
-    - Vision input (images in emails, screenshots)
-    - Streaming output (WebSocket token-by-token)
-    - Structured JSON output (for tool calls)
+    - Text generation
+    - Vision input (images in user messages / attachments)
+    - Streaming responses (WebSocket support)
+    - Structured JSON output
     """
 
     _instance: HermesLLM | None = None
@@ -51,11 +51,16 @@ class HermesLLM:
         return cls._instance
 
     def initialize(self) -> None:
-        """Load model and processor. Call once at startup."""
+        """Load model and processor or initialize API connection. Call once at startup."""
         if self._initialized:
             return
 
-        logger.info(f"Loading LLM: {settings.llm_model_id}")
+        if settings.llm_provider == "openai":
+            self._initialized = True
+            logger.info(f"✅ LLM configured to use external API: {settings.llm_api_base} with model {settings.llm_model_id}")
+            return
+
+        logger.info(f"Loading local LLM: {settings.llm_model_id}")
         logger.info(f"Device: {settings.llm_device} | dtype: {settings.llm_torch_dtype} | 4-bit: {settings.llm_load_in_4bit}")
 
         torch_dtype = _DTYPE_MAP.get(settings.llm_torch_dtype, torch.bfloat16)
@@ -63,6 +68,7 @@ class HermesLLM:
         # Build quantization config (4-bit NF4 — fits 7B in ~5GB VRAM)
         quant_config = None
         if settings.llm_load_in_4bit and settings.llm_device == "cuda":
+            from transformers import BitsAndBytesConfig
             quant_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch_dtype,
@@ -70,6 +76,7 @@ class HermesLLM:
                 bnb_4bit_quant_type="nf4",
             )
 
+        from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             settings.llm_model_id,
             torch_dtype=torch_dtype,
@@ -87,9 +94,145 @@ class HermesLLM:
         )
 
         self._initialized = True
-        logger.info("✅ LLM loaded successfully")
+        logger.info("✅ Local LLM loaded successfully")
 
-    # ── Core generation ──────────────────────────────────────────────────────
+    # ── API Generation ────────────────────────────────────────────────────────
+
+    def _format_messages_for_api(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Format messages and optional images into OpenAI image_url structures."""
+        if not images:
+            return messages
+
+        formatted_messages = []
+        for msg in messages:
+            formatted_messages.append(dict(msg))
+
+        last_user_msg = None
+        for msg in reversed(formatted_messages):
+            if msg["role"] == "user":
+                last_user_msg = msg
+                break
+
+        if last_user_msg:
+            original_content = last_user_msg["content"]
+            content_list = []
+            if isinstance(original_content, list):
+                content_list = list(original_content)
+            else:
+                content_list = [{"type": "text", "text": str(original_content)}]
+
+            for img in images:
+                if isinstance(img, (str, Path)):
+                    img_path = Path(img)
+                    if img_path.exists():
+                        mime = "image/jpeg"
+                        if img_path.suffix.lower() in [".png"]:
+                            mime = "image/png"
+                        elif img_path.suffix.lower() in [".webp"]:
+                            mime = "image/webp"
+                        
+                        with open(img_path, "rb") as image_file:
+                            encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+                        
+                        content_list.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime};base64,{encoded_string}"
+                            }
+                        })
+                elif isinstance(img, bytes):
+                    encoded_string = base64.b64encode(img).decode("utf-8")
+                    content_list.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{encoded_string}"
+                        }
+                    })
+
+            last_user_msg["content"] = content_list
+
+        return formatted_messages
+
+    async def _generate_api(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any] | None = None,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+        json_mode: bool = False,
+    ) -> str:
+        payload_messages = self._format_messages_for_api(messages, images)
+        payload = {
+            "model": settings.llm_model_id,
+            "messages": payload_messages,
+            "max_tokens": max_new_tokens or settings.llm_max_new_tokens,
+            "temperature": temperature or settings.llm_temperature,
+            "top_p": settings.llm_top_p,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {}
+        if settings.llm_api_key and settings.llm_api_key != "not-needed":
+            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.llm_api_base.rstrip('/')}/chat/completions",
+                json=payload,
+                headers=headers
+            )
+            response.raise_for_status()
+            res_json = response.json()
+            return res_json["choices"][0]["message"]["content"].strip()
+
+    async def _stream_api(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any] | None = None,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> AsyncGenerator[str, None]:
+        payload_messages = self._format_messages_for_api(messages, images)
+        payload = {
+            "model": settings.llm_model_id,
+            "messages": payload_messages,
+            "max_tokens": max_new_tokens or settings.llm_max_new_tokens,
+            "temperature": temperature or settings.llm_temperature,
+            "top_p": settings.llm_top_p,
+            "stream": True,
+        }
+
+        headers = {}
+        if settings.llm_api_key and settings.llm_api_key != "not-needed":
+            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST",
+                f"{settings.llm_api_base.rstrip('/')}/chat/completions",
+                json=payload,
+                headers=headers
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk_json = json.loads(data_str)
+                            delta = chunk_json["choices"][0]["delta"]
+                            if "content" in delta:
+                                yield delta["content"]
+                        except Exception:
+                            pass
+
+    # ── Local Generation ──────────────────────────────────────────────────────
 
     def _build_inputs(
         self,
@@ -107,7 +250,6 @@ class HermesLLM:
             images=images,
             return_tensors="pt",
         )
-        # Move to model device
         device = next(self.model.parameters()).device
         return {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
@@ -119,7 +261,10 @@ class HermesLLM:
         temperature: float | None = None,
         json_mode: bool = False,
     ) -> str:
-        """Non-streaming generation — returns full response string."""
+        """Text generation — routes to local or API client."""
+        if settings.llm_provider == "openai":
+            return await self._generate_api(messages, images, max_new_tokens, temperature, json_mode)
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
@@ -149,13 +294,11 @@ class HermesLLM:
             "do_sample": temperature > 0,
         }
         if json_mode:
-            # Bias toward JSON structure — basic approach
             gen_kwargs["do_sample"] = False
 
         with torch.inference_mode():
             output = self.model.generate(**inputs, **gen_kwargs)
 
-        # Decode only newly generated tokens
         generated = output[0][input_len:]
         return self.processor.decode(generated, skip_special_tokens=True).strip()
 
@@ -166,12 +309,15 @@ class HermesLLM:
         max_new_tokens: int | None = None,
         temperature: float | None = None,
     ) -> AsyncGenerator[str, None]:
-        """
-        Streaming generation — yields tokens one by one.
-        Uses TextIteratorStreamer in a background thread.
-        """
+        """Streaming generation — routes to local or API client."""
+        if settings.llm_provider == "openai":
+            async for chunk in self._stream_api(messages, images, max_new_tokens, temperature):
+                yield chunk
+            return
+
         inputs = self._build_inputs(messages, images)
 
+        from transformers import TextIteratorStreamer
         streamer = TextIteratorStreamer(
             self.processor.tokenizer,
             skip_prompt=True,
@@ -187,16 +333,13 @@ class HermesLLM:
             "do_sample": (temperature or settings.llm_temperature) > 0,
         }
 
-        # Run generation in background thread (non-blocking)
         thread = Thread(target=self._run_generation_thread, args=(gen_kwargs,))
         thread.start()
 
-        # Yield tokens as they are produced
         loop = asyncio.get_event_loop()
         for token in streamer:
             if token:
                 yield token
-            # Yield control back to event loop between tokens
             await asyncio.sleep(0)
 
         thread.join()
@@ -218,6 +361,18 @@ class HermesLLM:
     async def json_chat(self, system: str, user: str, **kwargs: Any) -> str:
         """Chat with JSON output mode enabled."""
         return await self.chat(system, user, json_mode=True, **kwargs)
+
+    # ── Streaming chat integration helper (Agent compatibility) ──────────────
+
+    async def stream_generate(
+        self,
+        messages: list[dict[str, Any]],
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """Alias helper for agent message templates streaming."""
+        async for token in self.stream(messages, max_new_tokens=max_new_tokens, temperature=temperature):
+            yield token
 
     # ── Singleton accessor ───────────────────────────────────────────────────
 
