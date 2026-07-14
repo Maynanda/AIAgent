@@ -248,6 +248,92 @@
       padding: 2px 6px;
     }
 
+    /* ── Thinking / Reasoning collapse block ── */
+    .thinking-block {
+      margin-bottom: 10px;
+      border: 1px solid rgba(124,58,237,0.2);
+      border-radius: var(--radius-sm);
+      background: rgba(124,58,237,0.05);
+      overflow: hidden;
+    }
+
+    .thinking-block summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-accent);
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      transition: background var(--transition-fast);
+    }
+    .thinking-block summary::-webkit-details-marker { display: none; }
+    .thinking-block summary::before {
+      content: '▶';
+      font-size: 9px;
+      transition: transform 0.2s;
+      opacity: 0.6;
+    }
+    .thinking-block[open] summary::before { transform: rotate(90deg); }
+    .thinking-block summary:hover { background: rgba(124,58,237,0.08); }
+
+    .thinking-content {
+      padding: 10px 14px;
+      border-top: 1px solid rgba(124,58,237,0.15);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      line-height: 1.7;
+      white-space: pre-wrap;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .thinking-step {
+      margin-bottom: 8px;
+    }
+    .thinking-step-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 2px;
+    }
+    .step-thought  .thinking-step-label { color: rgba(167,139,250,0.8); }
+    .step-action   .thinking-step-label { color: rgba(6,182,212,0.8); }
+    .step-observe  .thinking-step-label { color: rgba(250,204,21,0.8); }
+    .step-thought  .thinking-step-body  { color: rgba(200,200,220,0.7); }
+    .step-action   .thinking-step-body  { color: rgba(6,182,212,0.7); }
+    .step-observe  .thinking-step-body  { color: rgba(250,204,21,0.6); }
+
+    /* Live thinking stream area (while streaming) */
+    .thinking-live {
+      padding: 8px 12px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: rgba(167,139,250,0.6);
+      border-bottom: 1px dashed rgba(124,58,237,0.2);
+      white-space: pre-wrap;
+      min-height: 20px;
+      line-height: 1.6;
+      animation: thinkingPulse 2s ease-in-out infinite;
+    }
+    @keyframes thinkingPulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+
+    /* Final answer area */
+    .answer-block {
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-primary);
+    }
+
     /* ── Chat input area ── */
     .chat-input-area {
       padding: 20px 32px 24px;
@@ -566,42 +652,130 @@
   chat.onAck = (sid) => {
     document.getElementById('session-id-display').textContent = `session: ${sid.slice(0, 8)}`;
   };
+  // Accumulates the raw streaming text before final parse
+  let _streamBuffer = '';
+
   chat.onToken = (tok) => {
-    if (currentMessageEl) {
-      // Remove typing indicator if still present
-      const typing = currentMessageEl.querySelector('.typing-indicator');
-      if (typing) typing.remove();
-      // Append token
-      let textNode = currentMessageEl.querySelector('.bubble-text');
-      if (!textNode) {
-        textNode = document.createElement('span');
-        textNode.className = 'bubble-text';
-        currentMessageEl.appendChild(textNode);
+    if (!currentMessageEl) return;
+
+    // Remove typing indicator if still present
+    const typing = currentMessageEl.querySelector('.typing-indicator');
+    if (typing) typing.remove();
+
+    _streamBuffer += tok;
+
+    // Route to live thinking area vs answer area in real-time
+    let liveThink = currentMessageEl.querySelector('.thinking-live');
+    let answerEl  = currentMessageEl.querySelector('.answer-block');
+
+    const answerIdx = _streamBuffer.indexOf('\nAnswer:');
+    const hasAnswer  = answerIdx !== -1;
+
+    if (!hasAnswer) {
+      // Still in thinking phase — show in live-think area
+      if (!liveThink) {
+        liveThink = document.createElement('div');
+        liveThink.className = 'thinking-live';
+        currentMessageEl.appendChild(liveThink);
       }
-      textNode.textContent += tok;
-      scrollToBottom();
+      liveThink.textContent = _streamBuffer;
+    } else {
+      // Answer section has started — hide the live area, stream answer
+      if (liveThink) liveThink.style.display = 'none';
+      const answerText = _streamBuffer.slice(answerIdx + '\nAnswer:'.length).trimStart();
+      if (!answerEl) {
+        answerEl = document.createElement('div');
+        answerEl.className = 'answer-block';
+        currentMessageEl.appendChild(answerEl);
+      }
+      answerEl.textContent = answerText;
     }
+
+    scrollToBottom();
   };
 
   chat.onDone = (meta) => {
     currentRunId = meta.run_id;
     isStreaming = false;
     document.getElementById('send-btn').disabled = false;
-    // Add feedback actions
+
     if (currentMessageEl) {
+      // ── Re-render bubble with proper collapsed thinking block ──
+      const raw = _streamBuffer.trim();
+      _streamBuffer = '';
+
+      // Split on Answer:
+      const answerMatch = raw.match(/(?:^|\n)Answer:\s*([\s\S]*)$/);
+      const answerText  = answerMatch ? answerMatch[1].trim() : raw;
+      const thinkingRaw = answerMatch ? raw.slice(0, raw.indexOf('\nAnswer:')).trim() : '';
+
+      // Parse thinking into steps
+      let stepsHtml = '';
+      if (thinkingRaw) {
+        // Split by Thought/Action/Observation labels
+        const lines = thinkingRaw.split('\n');
+        let currentType = 'thought', currentLines = [];
+        const flush = () => {
+          if (!currentLines.length) return;
+          const cls = currentType === 'thought' ? 'step-thought'
+                    : currentType === 'action'  ? 'step-action'
+                    : 'step-observe';
+          const label = currentType.charAt(0).toUpperCase() + currentType.slice(1);
+          stepsHtml += `<div class="thinking-step ${cls}">
+            <div class="thinking-step-label">${label}</div>
+            <div class="thinking-step-body">${escapeHtml(currentLines.join('\n'))}</div>
+          </div>`;
+          currentLines = [];
+        };
+        for (const line of lines) {
+          if (/^Thought:/i.test(line))      { flush(); currentType = 'thought';  currentLines.push(line.replace(/^Thought:\s*/i, '')); }
+          else if (/^Action:/i.test(line))  { flush(); currentType = 'action';   currentLines.push(line.replace(/^Action:\s*/i, '')); }
+          else if (/^Observation:/i.test(line)) { flush(); currentType = 'observe';  currentLines.push(line.replace(/^Observation:\s*/i, '')); }
+          else currentLines.push(line);
+        }
+        flush();
+      }
+
+      // Count steps
+      const stepCount = (thinkingRaw.match(/^Thought:/gim) || []).length;
+
+      // Build the final bubble HTML
+      currentMessageEl.innerHTML = '';
+
+      if (stepsHtml) {
+        const details = document.createElement('details');
+        details.className = 'thinking-block';
+        details.innerHTML = `
+          <summary>
+            🧠 Reasoning &nbsp;·&nbsp;
+            <span style="opacity:.6">${stepCount} step${stepCount !== 1 ? 's' : ''} · ${meta.duration_ms ?? 0}ms</span>
+          </summary>
+          <div class="thinking-content">${stepsHtml}</div>
+        `;
+        currentMessageEl.appendChild(details);
+      }
+
+      const answerDiv = document.createElement('div');
+      answerDiv.className = 'answer-block';
+      answerDiv.innerHTML = formatAnswer(answerText);
+      currentMessageEl.appendChild(answerDiv);
+
+      // Feedback actions
       const msgEl = currentMessageEl.closest('.message');
-      if (msgEl) {
+      if (msgEl && meta.run_id) {
         const actions = msgEl.querySelector('.message-actions');
-        if (actions && meta.run_id) {
+        if (actions) {
           actions.innerHTML = `
             <button class="action-btn" id="like-${meta.run_id}" onclick="feedback('${meta.run_id}', 5, this)">👍</button>
             <button class="action-btn" id="dislike-${meta.run_id}" onclick="feedback('${meta.run_id}', 1, this)">👎</button>
-            <span class="steps-badge">${meta.steps} steps · ${meta.duration_ms}ms</span>
+            <span class="steps-badge">${meta.steps ?? stepCount} steps · ${meta.duration_ms ?? 0}ms</span>
           `;
         }
       }
     }
+
     updateStatus('ready', 'Ready');
+    scrollToBottom();
   };
 
   chat.onError = (err) => {
@@ -789,6 +963,30 @@
   function escapeHtml(str) {
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
+
+  /** Light-weight markdown → HTML for the final answer block. */
+  function formatAnswer(text) {
+    if (!text) return '';
+    let html = escapeHtml(text);
+    // Code blocks ```...```
+    html = html.replace(/```([\s\S]*?)```/g,
+      '<pre style="background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:6px;padding:10px 12px;overflow-x:auto;font-size:12px;color:var(--accent-secondary);margin:8px 0">$1</pre>');
+    // Inline code `...`
+    html = html.replace(/`([^`]+)`/g,
+      '<code style="font-family:var(--font-mono);font-size:12px;background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px">$1</code>');
+    // Bold **...**
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Bullet lines starting with - or *
+    html = html.replace(/^[-*]\s+(.+)$/gm,
+      '<span style="display:flex;gap:6px;margin:2px 0"><span style="color:var(--accent-primary);flex-shrink:0">▸</span><span>$1</span></span>');
+    // Numbered lines 1. ...
+    html = html.replace(/^\d+\.\s+(.+)$/gm,
+      '<span style="display:flex;gap:6px;margin:2px 0"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;flex-shrink:0;min-width:16px">$&</span></span>');
+    // Line breaks
+    html = html.replace(/\n/g, '<br>');
+    return html;
+  }
+
 
   function autoResize(el) {
     el.style.height = 'auto';
