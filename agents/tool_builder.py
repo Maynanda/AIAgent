@@ -122,21 +122,22 @@ async def create_dynamic_tool(
     # 4. Register in database
     try:
         async with AsyncSessionLocal() as db:
-            existing_stmt = __import__("sqlalchemy", fromlist=["select"]).select(ToolRegistry).where(ToolRegistry.name == name)
             from sqlalchemy import select
             existing = await db.execute(select(ToolRegistry).where(ToolRegistry.name == name))
             tool_record = existing.scalars().first()
 
             if tool_record:
                 tool_record.description = description
-                tool_record.code_path = str(file_path)
+                tool_record.file_path = str(file_path)
+                tool_record.source_code = full_code
                 tool_record.is_active = True
             else:
                 db.add(ToolRegistry(
                     name=name,
                     description=description,
                     category="dynamic",
-                    code_path=str(file_path),
+                    file_path=str(file_path),
+                    source_code=full_code,
                     is_active=True,
                     created_by=author,
                 ))

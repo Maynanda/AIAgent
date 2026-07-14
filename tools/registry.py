@@ -51,6 +51,10 @@ class ToolRegistry:
             except Exception as e:
                 logger.error(f"Failed to load static tool module {module_path}: {e}")
 
+    def load_dynamic_tools(self) -> None:
+        """Expose public trigger to hot-reload dynamically created tools."""
+        self._load_dynamic_tools()
+
     def _load_dynamic_tools(self) -> None:
         """Load dynamically created tools from tools/dynamic/."""
         for tool_path in DYNAMIC_TOOLS_DIR.glob("*.py"):
