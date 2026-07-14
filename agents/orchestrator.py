@@ -30,6 +30,7 @@ from tools.static.filesystem_tools import (
     get_file_info, create_directory, move_file, delete_file,
     index_folder_to_knowledge_graph,
 )
+from tools.static.tool_builder_tools import create_new_dynamic_tool
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ _DELEGATE_MAP = {
     "project_agent": ["project", "task", "kanban", "milestone", "deadline", "progress", "board"],
     "knowledge_agent": ["who", "what", "search", "find", "know", "remember", "recall", "graph"],
     "filesystem_agent": ["file", "folder", "directory", "read", "open", "document", "list files", "index folder", "write file", "find file"],
+    "tool_builder": ["create tool", "write tool", "add tool", "new tool", "make tool", "custom tool"],
 }
 
 
@@ -112,6 +114,8 @@ class OrchestratorAgent(BaseAgent):
             "move_file": move_file,
             "delete_file": delete_file,
             "index_folder_to_knowledge_graph": index_folder_to_knowledge_graph,
+            # Tool builder
+            "create_new_dynamic_tool": create_new_dynamic_tool,
             # Meta: delegation
             "delegate_to_agent": self._delegate_to_agent,
         }
