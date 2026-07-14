@@ -16,9 +16,15 @@ from agents.base import BaseAgent, AgentResult, AgentStep
 from agents.email_agent import EmailAgent
 from agents.project_agent import ProjectAgent
 from agents.knowledge_agent import KnowledgeAgent
+from agents.filesystem_agent import FilesystemAgent
 from tools.static.project_tools import create_project, create_project_block, update_block_status, list_active_projects
 from tools.static.email_tools import send_email_message, list_unread_emails, get_email_content
 from tools.static.db_tools import search_knowledge_base, add_entity_relation, record_activity_note
+from tools.static.filesystem_tools import (
+    list_directory, read_file, write_file, search_files,
+    get_file_info, create_directory, move_file, delete_file,
+    index_folder_to_knowledge_graph,
+)
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,6 +35,7 @@ _DELEGATE_MAP = {
     "email_agent": ["email", "inbox", "send", "reply", "message", "mail", "imap"],
     "project_agent": ["project", "task", "kanban", "milestone", "deadline", "progress", "board"],
     "knowledge_agent": ["who", "what", "search", "find", "know", "remember", "recall", "graph"],
+    "filesystem_agent": ["file", "folder", "directory", "read", "open", "document", "list files", "index folder", "write file", "find file"],
 }
 
 
@@ -44,6 +51,7 @@ class OrchestratorAgent(BaseAgent):
             "email_agent": EmailAgent(llm),
             "project_agent": ProjectAgent(llm),
             "knowledge_agent": KnowledgeAgent(llm),
+            "filesystem_agent": FilesystemAgent(llm),
         }
 
     @property
@@ -82,6 +90,16 @@ class OrchestratorAgent(BaseAgent):
             "search_knowledge_base": search_knowledge_base,
             "add_entity_relation": add_entity_relation,
             "record_activity_note": record_activity_note,
+            # Filesystem tools
+            "list_directory": list_directory,
+            "read_file": read_file,
+            "write_file": write_file,
+            "search_files": search_files,
+            "get_file_info": get_file_info,
+            "create_directory": create_directory,
+            "move_file": move_file,
+            "delete_file": delete_file,
+            "index_folder_to_knowledge_graph": index_folder_to_knowledge_graph,
             # Meta: delegation
             "delegate_to_agent": self._delegate_to_agent,
         }

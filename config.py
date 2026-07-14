@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     weekly_report_hour: int = 8
     nightly_refinement_hour: int = 2
 
+    # ── Filesystem Access ─────────────────────────────────────
+    # Comma-separated list of absolute paths Hermes is allowed to read/write
+    # Example: /Users/alpha/Documents,/Users/alpha/Projects
+    filesystem_allowed_paths: str = ""
+    # Max file size in bytes Hermes will read (default 10MB)
+    filesystem_max_file_bytes: int = 10 * 1024 * 1024
+    # File extensions blocked from reading (security)
+    filesystem_blocked_extensions: str = ".env,.key,.pem,.p12,.pfx,.crt"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
