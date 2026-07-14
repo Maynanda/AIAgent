@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     whisper_language: str | None = "en"
 
     # ── Email ────────────────────────────────────────────────
+    email_client: Literal["imap", "outlook"] = "imap"
     email_imap_host: str = "imap.gmail.com"
     email_imap_port: int = 993
     email_imap_use_ssl: bool = True
