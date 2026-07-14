@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_db
-from database.models import Project, ProjectBlock, Entity, Relation
+from database.models import Project, ProjectBlock, Entity, Relation, Task
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -229,6 +229,26 @@ async def create_block(
         metadata_=body.get("metadata", {}),
     )
     db.add(block)
+    await db.flush()  # get the block.id before commit
+
+    # Mirror task-type blocks into the global Task table for unified task view
+    if block_type in ["task", "milestone"]:
+        existing_task = await db.get(Task, block.id)
+        if not existing_task:
+            task = Task(
+                id=block.id,            # share the same UUID so PATCH/DELETE can find it
+                entity_id=entity_id,
+                title=title,
+                description=body.get("content"),
+                status=block.status,
+                priority=body.get("priority", 3),
+                project_id=project_id,
+                due_date=date.fromisoformat(due_date) if due_date else None,
+                source="project_block",
+                metadata_={"block_id": block.id, "block_type": block_type},
+            )
+            db.add(task)
+
     await db.commit()
 
     return {
@@ -285,6 +305,24 @@ async def update_block(
     if "metadata" in body:
         block.metadata_ = body["metadata"]
 
+    # Mirror updates into the global Task table
+    task = await db.get(Task, block_id)
+    if task:
+        if "title" in body:
+            task.title = body["title"]
+        if "content" in body:
+            task.description = body["content"]
+        if "status" in body:
+            task.status = body["status"]
+            if body["status"] == "done" and not task.completed_at:
+                task.completed_at = datetime.utcnow()
+            elif body["status"] != "done":
+                task.completed_at = None
+        if "due_date" in body:
+            task.due_date = date.fromisoformat(body["due_date"]) if body["due_date"] else None
+        if "assignee_id" in body:
+            task.assignee_id = body["assignee_id"]
+
     await db.commit()
 
     return {
@@ -314,6 +352,11 @@ async def delete_block(
         entity = await db.get(Entity, block.entity_id)
         if entity:
             await db.delete(entity)
+
+    # Remove the mirrored Task entry as well
+    task = await db.get(Task, block_id)
+    if task:
+        await db.delete(task)
 
     await db.delete(block)
     await db.commit()

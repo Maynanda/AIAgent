@@ -230,15 +230,37 @@ Answer: <your answer — only when Action is FINAL_ANSWER>
         user_input: str,
         context: str = "",
         session_id: str | None = None,
+        images: list[Any] | None = None,
     ):
         """
         Streaming version of run() — yields tokens as they are generated.
+        Streams the full ReAct trace then the final answer with an 'Answer:' marker
+        so the frontend can split thinking-steps from the answer block.
         Suitable for WebSocket connections.
         """
-        # For streaming, we run the full loop but stream the final response
-        result = await self.run(user_input, context, session_id)
+        # Run the full ReAct loop (blocking — LLM is synchronous here)
+        result = await self.run(user_input, context, session_id, images=images)
 
-        # Stream the final answer character by character for smooth UX
+        # Stream the ReAct thinking trace first (Thought / Action / Observation)
+        trace_lines = []
+        for step in result.steps:
+            if step.thought and not step.is_final:
+                trace_lines.append(f"Thought: {step.thought}")
+            if step.tool_name:
+                trace_lines.append(f"Action: {step.tool_name}({json.dumps(step.tool_input)})")
+            if step.observation:
+                trace_lines.append(f"Observation: {step.observation}")
+
+        if trace_lines:
+            trace_text = "\n".join(trace_lines)
+            for char in trace_text:
+                yield char
+
+        # Stream the final answer with the 'Answer:' delimiter
+        answer_prefix = "\nAnswer: "
+        for char in answer_prefix:
+            yield char
+
         for char in result.result:
             yield char
 

@@ -264,8 +264,18 @@
       cursor: pointer; transition: all .15s; line-height: 1.4;
     }
     .kanban-task:hover { background: rgba(124,58,237,0.12); border-color: rgba(124,58,237,0.3); transform: translateY(-1px); }
+    .kanban-task:active { cursor: grabbing; }
+    .kanban-task[draggable="true"] { cursor: grab; }
     .kanban-task.blocked-task { border-color: rgba(239,68,68,0.25); color: #fca5a5; }
     .kanban-task.done-task { opacity: .45; text-decoration: line-through; }
+    .kanban-col[ondragover] { transition: background .15s; }
+    .kanban-col.drag-over { background: rgba(124,58,237,0.08); border: 1px dashed rgba(124,58,237,0.4); }
+    .btn-add-task-inline {
+      width: 100%; margin-top: 6px; padding: 5px 0; font-size: 11px; font-weight: 600;
+      color: #666; background: transparent; border: 1px dashed rgba(255,255,255,0.1);
+      border-radius: 7px; cursor: pointer; transition: all .15s; letter-spacing: .02em;
+    }
+    .btn-add-task-inline:hover { color: #a78bfa; border-color: rgba(124,58,237,0.35); background: rgba(124,58,237,0.06); }
 
     /* ── Activity Feed ── */
     .activity-feed { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; margin-bottom: 14px; }
@@ -726,17 +736,26 @@
     function renderKanbanCol(title, items, colStatus) {
       const taskClass = colStatus === 'blocked' ? 'blocked-task' : colStatus === 'done' ? 'done-task' : '';
       return `
-        <div class="kanban-col">
+        <div class="kanban-col" data-col-status="${colStatus}"
+             ondragover="event.preventDefault()" ondrop="handleKanbanDrop(event,'${colStatus}')">
           <div class="kanban-col-title">
             ${title}
             <span class="kanban-count">${items.length}</span>
           </div>
           ${items.length === 0
             ? `<div style="font-size:11px;color:#444;padding:4px">—</div>`
-            : items.map(i => `<div class="kanban-task ${taskClass}"
-                onclick="openTaskModal('${i.id}', ${JSON.stringify(i.title).replace(/'/g,"\\'")}, '${colStatus}')"
-                title="Click to edit task">${i.title}</div>`).join('')
+            : items.map(i => {
+                const safeTitle = (i.title || '').replace(/"/g, '&quot;');
+                return `<div class="kanban-task ${taskClass}"
+                  data-block-id="${i.id}"
+                  data-block-status="${colStatus}"
+                  data-block-title="${safeTitle}"
+                  draggable="true"
+                  ondragstart="handleKanbanDragStart(event)"
+                  title="Click to edit • Drag to move">${i.title}</div>`;
+              }).join('')
           }
+          <button class="btn-add-task-inline" onclick="openNewTaskModalInCol('${colStatus}')" title="Add task">+ Add task</button>
         </div>`;
     }
 
@@ -818,6 +837,63 @@
     // ── Task Modal ─────────────────────────────────────────────────────────────
     let _taskModalBlockId = null;
     let _taskModalCurrentStatus = null;
+    let _draggingBlockId = null;
+
+    // Delegated click: kanban-task cards open edit modal via data attributes
+    document.addEventListener('click', (e) => {
+      const card = e.target.closest('.kanban-task');
+      if (!card) return;
+      const id     = card.dataset.blockId;
+      const status = card.dataset.blockStatus;
+      const title  = card.dataset.blockTitle || card.textContent.trim();
+      if (id) openTaskModal(id, title, status);
+    });
+
+    // ── Drag-and-drop between Kanban columns ───────────────────────────────────
+    function handleKanbanDragStart(event) {
+      _draggingBlockId = event.target.dataset.blockId;
+      event.dataTransfer.effectAllowed = 'move';
+      event.target.style.opacity = '0.5';
+    }
+
+    async function handleKanbanDrop(event, targetStatus) {
+      event.preventDefault();
+      if (!_draggingBlockId || !currentProjectId) return;
+
+      // Find dragged card and restore opacity
+      const card = document.querySelector(`[data-block-id="${_draggingBlockId}"]`);
+      if (card) card.style.opacity = '';
+
+      const fromStatus = card?.dataset.blockStatus;
+      if (fromStatus === targetStatus) return; // dropped in same column
+
+      // Optimistic UI — re-render after
+      await fetch(`/api/projects/${currentProjectId}/blocks/${_draggingBlockId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: targetStatus }),
+      });
+
+      showToast(`✅ Moved to ${targetStatus.replace('_', ' ')}`, 'success');
+      _draggingBlockId = null;
+      await selectProject(currentProjectId);
+      setTimeout(() => refreshBlocks(), 500);
+    }
+
+    function openNewTaskModalInCol(status) {
+      _taskModalBlockId = null;
+      _taskModalCurrentStatus = status;
+      document.getElementById('taskModalTitle').textContent = 'New Task';
+      document.getElementById('taskModalBlockTitle').textContent = '';
+      document.querySelectorAll('.status-chip').forEach(chip => {
+        chip.classList.toggle('active-status', chip.dataset.status === status);
+      });
+      document.getElementById('newTaskTitleInput').style.display = 'block';
+      document.getElementById('newTaskTitleInput').value = '';
+      document.getElementById('btnDeleteTask').style.display = 'none';
+      document.getElementById('taskModal').classList.add('open');
+    }
+
 
     function openTaskModal(blockId, title, currentStatus) {
       _taskModalBlockId = blockId;

@@ -670,19 +670,27 @@
     let liveThink = currentMessageEl.querySelector('.thinking-live');
     let answerEl  = currentMessageEl.querySelector('.answer-block');
 
+    // Look for both '\nAnswer: ' and 'Answer: ' (start of buffer)
     const answerIdx = _streamBuffer.indexOf('\nAnswer:');
     const hasAnswer  = answerIdx !== -1;
 
     if (!hasAnswer) {
-      // Still in thinking phase — show in live-think area
+      // Still in thinking phase — show collapsed thinking trace
       if (!liveThink) {
         liveThink = document.createElement('div');
         liveThink.className = 'thinking-live';
         currentMessageEl.appendChild(liveThink);
       }
-      liveThink.textContent = _streamBuffer;
+      // Show a summary line so the user sees something meaningful
+      const thoughtCount = (_streamBuffer.match(/^Thought:/gm) || []).length;
+      const obsCount     = (_streamBuffer.match(/^Observation:/gm) || []).length;
+      if (thoughtCount > 0) {
+        liveThink.textContent = `🧠 Reasoning… (${thoughtCount} thought${thoughtCount > 1 ? 's' : ''}, ${obsCount} action${obsCount > 1 ? 's' : ''})`;
+      } else {
+        liveThink.textContent = '🧠 Thinking…';
+      }
     } else {
-      // Answer section has started — hide the live area, stream answer
+      // Answer section has started — hide the live area, stream answer text
       if (liveThink) liveThink.style.display = 'none';
       const answerText = _streamBuffer.slice(answerIdx + '\nAnswer:'.length).trimStart();
       if (!answerEl) {
@@ -1026,6 +1034,7 @@
   function doSend(text) {
     if (isStreaming) return;
     isStreaming = true;
+    _streamBuffer = '';   // ← always reset before a new message
     document.getElementById('send-btn').disabled = true;
 
     // Add user message
