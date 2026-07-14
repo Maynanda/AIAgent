@@ -1,26 +1,30 @@
 """
 ARIA / Hermes — LLM Client
-Singleton wrapper around Qwen2.5-VL-7B-Instruct via HuggingFace Transformers or external OpenAI-compatible API.
-Loaded once at startup, shared across all agents via dependency injection.
+Supports two backends:
+  - local: Qwen2.5-VL-7B-Instruct via HuggingFace Transformers (GPU)
+  - openai: External model server with two separate endpoints:
+      /v1/chat/completions  → text-only requests
+      /v1/multimodal        → requests with image attachments
+
+All agents share one singleton instance.
 """
 from __future__ import annotations
 
 import asyncio
-import logging
 import base64
 import json
-from pathlib import Path
+import logging
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from threading import Thread
 from typing import Any
 
-import torch
 import httpx
+import torch
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── dtype map ───────────────────────────────────────────────────────────────
 _DTYPE_MAP = {
     "bfloat16": torch.bfloat16,
     "float16": torch.float16,
@@ -31,15 +35,16 @@ _DTYPE_MAP = {
 class HermesLLM:
     """
     Singleton LLM client.
-    Can be run:
-    - Localy via Transformers (loaded directly on GPU).
-    - Remotely via OpenAI-compatible completion APIs (layer 0 model server).
 
-    Supports:
-    - Text generation
-    - Vision input (images in user messages / attachments)
-    - Streaming responses (WebSocket support)
-    - Structured JSON output
+    When llm_provider == "openai":
+      - Text-only requests  → POST {llm_api_base}{llm_chat_path}
+        (default: /v1/chat/completions)
+      - Requests with images → POST {llm_api_base}{llm_multimodal_path}
+        (default: /v1/multimodal)
+      Images are base64-encoded and sent as "image_url" content blocks.
+
+    When llm_provider == "local":
+      - Transformers GPU inference (Qwen2.5-VL singleton).
     """
 
     _instance: HermesLLM | None = None
@@ -51,21 +56,20 @@ class HermesLLM:
         return cls._instance
 
     def initialize(self) -> None:
-        """Load model and processor or initialize API connection. Call once at startup."""
         if self._initialized:
             return
 
         if settings.llm_provider == "openai":
             self._initialized = True
-            logger.info(f"✅ LLM configured to use external API: {settings.llm_api_base} with model {settings.llm_model_id}")
+            logger.info(
+                f"✅ LLM → external API  base={settings.llm_api_base}  "
+                f"chat={settings.llm_chat_path}  multimodal={settings.llm_multimodal_path}"
+            )
             return
 
         logger.info(f"Loading local LLM: {settings.llm_model_id}")
-        logger.info(f"Device: {settings.llm_device} | dtype: {settings.llm_torch_dtype} | 4-bit: {settings.llm_load_in_4bit}")
-
         torch_dtype = _DTYPE_MAP.get(settings.llm_torch_dtype, torch.bfloat16)
 
-        # Build quantization config (4-bit NF4 — fits 7B in ~5GB VRAM)
         quant_config = None
         if settings.llm_load_in_4bit and settings.llm_device == "cuda":
             from transformers import BitsAndBytesConfig
@@ -86,147 +90,140 @@ class HermesLLM:
             trust_remote_code=True,
         )
         self.model.eval()
-
         self.processor = AutoProcessor.from_pretrained(
             settings.llm_model_id,
             cache_dir=settings.llm_cache_dir,
             trust_remote_code=True,
         )
-
         self._initialized = True
         logger.info("✅ Local LLM loaded successfully")
 
-    # ── API Generation ────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _format_messages_for_api(
+    def _api_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if settings.llm_api_key and settings.llm_api_key != "not-needed":
+            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+        return headers
+
+    def _encode_image(self, img: bytes | str | Path) -> str:
+        """Return a base64-encoded JPEG/PNG data-URI string."""
+        if isinstance(img, (str, Path)):
+            data = Path(img).read_bytes()
+        else:
+            data = img
+        return base64.b64encode(data).decode("utf-8")
+
+    def _build_api_messages(
         self,
         messages: list[dict[str, Any]],
-        images: list[Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Format messages and optional images into OpenAI image_url structures."""
+        images: list[Any] | None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """
+        Inject image content blocks into the last user message.
+        Returns (formatted_messages, has_images).
+        """
         if not images:
-            return messages
+            return messages, False
 
-        formatted_messages = []
-        for msg in messages:
-            formatted_messages.append(dict(msg))
+        formatted = [dict(m) for m in messages]
 
-        last_user_msg = None
-        for msg in reversed(formatted_messages):
-            if msg["role"] == "user":
-                last_user_msg = msg
+        # Find last user message
+        last_user = None
+        for m in reversed(formatted):
+            if m["role"] == "user":
+                last_user = m
                 break
 
-        if last_user_msg:
-            original_content = last_user_msg["content"]
-            content_list = []
-            if isinstance(original_content, list):
-                content_list = list(original_content)
-            else:
-                content_list = [{"type": "text", "text": str(original_content)}]
-
+        if last_user:
+            original = last_user["content"]
+            content = (
+                list(original)
+                if isinstance(original, list)
+                else [{"type": "text", "text": str(original)}]
+            )
             for img in images:
-                if isinstance(img, (str, Path)):
-                    img_path = Path(img)
-                    if img_path.exists():
-                        mime = "image/jpeg"
-                        if img_path.suffix.lower() in [".png"]:
-                            mime = "image/png"
-                        elif img_path.suffix.lower() in [".webp"]:
-                            mime = "image/webp"
-                        
-                        with open(img_path, "rb") as image_file:
-                            encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-                        
-                        content_list.append({
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime};base64,{encoded_string}"
-                            }
-                        })
-                elif isinstance(img, bytes):
-                    encoded_string = base64.b64encode(img).decode("utf-8")
-                    content_list.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{encoded_string}"
-                        }
-                    })
+                b64 = self._encode_image(img)
+                # Detect MIME from first bytes
+                mime = "image/jpeg"
+                raw = img if isinstance(img, bytes) else Path(img).read_bytes()
+                if raw[:4] == b"\x89PNG":
+                    mime = "image/png"
+                elif raw[:4] == b"RIFF":
+                    mime = "image/webp"
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                })
+            last_user["content"] = content
 
-            last_user_msg["content"] = content_list
+        return formatted, True
 
-        return formatted_messages
+    def _api_endpoint(self, has_images: bool) -> str:
+        """Choose the correct endpoint path based on whether images are included."""
+        base = settings.llm_api_base.rstrip("/")
+        path = settings.llm_multimodal_path if has_images else settings.llm_chat_path
+        return f"{base}{path}"
+
+    # ── API Generation ────────────────────────────────────────────────────────
 
     async def _generate_api(
         self,
         messages: list[dict[str, Any]],
-        images: list[Any] | None = None,
-        max_new_tokens: int | None = None,
-        temperature: float | None = None,
-        json_mode: bool = False,
+        images: list[Any] | None,
+        max_new_tokens: int,
+        temperature: float,
+        json_mode: bool,
     ) -> str:
-        payload_messages = self._format_messages_for_api(messages, images)
-        payload = {
+        msgs, has_images = self._build_api_messages(messages, images)
+        url = self._api_endpoint(has_images)
+        logger.debug(f"LLM API → {url} (images={has_images})")
+
+        payload: dict[str, Any] = {
             "model": settings.llm_model_id,
-            "messages": payload_messages,
-            "max_tokens": max_new_tokens or settings.llm_max_new_tokens,
-            "temperature": temperature or settings.llm_temperature,
+            "messages": msgs,
+            "max_tokens": max_new_tokens,
+            "temperature": temperature,
             "top_p": settings.llm_top_p,
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
-        headers = {}
-        if settings.llm_api_key and settings.llm_api_key != "not-needed":
-            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
-
         async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{settings.llm_api_base.rstrip('/')}/chat/completions",
-                json=payload,
-                headers=headers
-            )
-            response.raise_for_status()
-            res_json = response.json()
-            return res_json["choices"][0]["message"]["content"].strip()
+            resp = await client.post(url, json=payload, headers=self._api_headers())
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
 
     async def _stream_api(
         self,
         messages: list[dict[str, Any]],
-        images: list[Any] | None = None,
-        max_new_tokens: int | None = None,
-        temperature: float | None = None,
+        images: list[Any] | None,
+        max_new_tokens: int,
+        temperature: float,
     ) -> AsyncGenerator[str, None]:
-        payload_messages = self._format_messages_for_api(messages, images)
-        payload = {
+        msgs, has_images = self._build_api_messages(messages, images)
+        url = self._api_endpoint(has_images)
+        logger.debug(f"LLM stream → {url} (images={has_images})")
+
+        payload: dict[str, Any] = {
             "model": settings.llm_model_id,
-            "messages": payload_messages,
-            "max_tokens": max_new_tokens or settings.llm_max_new_tokens,
-            "temperature": temperature or settings.llm_temperature,
+            "messages": msgs,
+            "max_tokens": max_new_tokens,
+            "temperature": temperature,
             "top_p": settings.llm_top_p,
             "stream": True,
         }
 
-        headers = {}
-        if settings.llm_api_key and settings.llm_api_key != "not-needed":
-            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
-
         async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                f"{settings.llm_api_base.rstrip('/')}/chat/completions",
-                json=payload,
-                headers=headers
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
+            async with client.stream("POST", url, json=payload, headers=self._api_headers()) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
                     if line.startswith("data: "):
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
+                        data = line[6:].strip()
+                        if data == "[DONE]":
                             break
                         try:
-                            chunk_json = json.loads(data_str)
-                            delta = chunk_json["choices"][0]["delta"]
+                            delta = json.loads(data)["choices"][0]["delta"]
                             if "content" in delta:
                                 yield delta["content"]
                         except Exception:
@@ -234,24 +231,43 @@ class HermesLLM:
 
     # ── Local Generation ──────────────────────────────────────────────────────
 
-    def _build_inputs(
+    def _build_local_inputs(
         self,
         messages: list[dict[str, Any]],
         images: list[Any] | None = None,
     ) -> dict[str, Any]:
-        """Convert messages + optional images to model inputs."""
         text = self.processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
+            messages, tokenize=False, add_generation_prompt=True,
         )
-        inputs = self.processor(
-            text=[text],
-            images=images,
-            return_tensors="pt",
-        )
+        inputs = self.processor(text=[text], images=images, return_tensors="pt")
         device = next(self.model.parameters()).device
         return {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+
+    def _generate_local_sync(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any] | None,
+        max_new_tokens: int,
+        temperature: float,
+        json_mode: bool,
+    ) -> str:
+        inputs = self._build_local_inputs(messages, images)
+        input_len = inputs["input_ids"].shape[1]
+        gen_kwargs: dict[str, Any] = {
+            "max_new_tokens": max_new_tokens,
+            "temperature": temperature,
+            "top_p": settings.llm_top_p,
+            "do_sample": temperature > 0 and not json_mode,
+        }
+        with torch.inference_mode():
+            output = self.model.generate(**inputs, **gen_kwargs)
+        return self.processor.decode(output[0][input_len:], skip_special_tokens=True).strip()
+
+    def _run_generation_thread(self, gen_kwargs: dict[str, Any]) -> None:
+        with torch.inference_mode():
+            self.model.generate(**gen_kwargs)
+
+    # ── Public API ────────────────────────────────────────────────────────────
 
     async def generate(
         self,
@@ -261,46 +277,20 @@ class HermesLLM:
         temperature: float | None = None,
         json_mode: bool = False,
     ) -> str:
-        """Text generation — routes to local or API client."""
+        """
+        Non-streaming generation.
+        Routes to /v1/chat/completions (text) or /v1/multimodal (images).
+        """
+        _max = max_new_tokens or settings.llm_max_new_tokens
+        _temp = temperature or settings.llm_temperature
+
         if settings.llm_provider == "openai":
-            return await self._generate_api(messages, images, max_new_tokens, temperature, json_mode)
+            return await self._generate_api(messages, images, _max, _temp, json_mode)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None,
-            self._generate_sync,
-            messages,
-            images,
-            max_new_tokens or settings.llm_max_new_tokens,
-            temperature or settings.llm_temperature,
-            json_mode,
+            None, self._generate_local_sync, messages, images, _max, _temp, json_mode,
         )
-
-    def _generate_sync(
-        self,
-        messages: list[dict[str, Any]],
-        images: list[Any] | None,
-        max_new_tokens: int,
-        temperature: float,
-        json_mode: bool,
-    ) -> str:
-        inputs = self._build_inputs(messages, images)
-        input_len = inputs["input_ids"].shape[1]
-
-        gen_kwargs: dict[str, Any] = {
-            "max_new_tokens": max_new_tokens,
-            "temperature": temperature,
-            "top_p": settings.llm_top_p,
-            "do_sample": temperature > 0,
-        }
-        if json_mode:
-            gen_kwargs["do_sample"] = False
-
-        with torch.inference_mode():
-            output = self.model.generate(**inputs, **gen_kwargs)
-
-        generated = output[0][input_len:]
-        return self.processor.decode(generated, skip_special_tokens=True).strip()
 
     async def stream(
         self,
@@ -309,60 +299,48 @@ class HermesLLM:
         max_new_tokens: int | None = None,
         temperature: float | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Streaming generation — routes to local or API client."""
+        """
+        Streaming generation.
+        Routes to /v1/chat/completions (text) or /v1/multimodal (images).
+        """
+        _max = max_new_tokens or settings.llm_max_new_tokens
+        _temp = temperature or settings.llm_temperature
+
         if settings.llm_provider == "openai":
-            async for chunk in self._stream_api(messages, images, max_new_tokens, temperature):
-                yield chunk
+            async for token in self._stream_api(messages, images, _max, _temp):
+                yield token
             return
 
-        inputs = self._build_inputs(messages, images)
-
+        # Local streaming
+        inputs = self._build_local_inputs(messages, images)
         from transformers import TextIteratorStreamer
         streamer = TextIteratorStreamer(
-            self.processor.tokenizer,
-            skip_prompt=True,
-            skip_special_tokens=True,
+            self.processor.tokenizer, skip_prompt=True, skip_special_tokens=True,
         )
-
-        gen_kwargs: dict[str, Any] = {
+        gen_kwargs = {
             **inputs,
             "streamer": streamer,
-            "max_new_tokens": max_new_tokens or settings.llm_max_new_tokens,
-            "temperature": temperature or settings.llm_temperature,
+            "max_new_tokens": _max,
+            "temperature": _temp,
             "top_p": settings.llm_top_p,
-            "do_sample": (temperature or settings.llm_temperature) > 0,
+            "do_sample": _temp > 0,
         }
-
         thread = Thread(target=self._run_generation_thread, args=(gen_kwargs,))
         thread.start()
-
-        loop = asyncio.get_event_loop()
         for token in streamer:
             if token:
                 yield token
             await asyncio.sleep(0)
-
         thread.join()
 
-    def _run_generation_thread(self, gen_kwargs: dict[str, Any]) -> None:
-        with torch.inference_mode():
-            self.model.generate(**gen_kwargs)
-
-    # ── Convenience helpers ──────────────────────────────────────────────────
+    # ── Convenience ───────────────────────────────────────────────────────────
 
     async def chat(self, system: str, user: str, **kwargs: Any) -> str:
-        """Simple text-only chat with system + user message."""
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ]
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         return await self.generate(messages, **kwargs)
 
     async def json_chat(self, system: str, user: str, **kwargs: Any) -> str:
-        """Chat with JSON output mode enabled."""
         return await self.chat(system, user, json_mode=True, **kwargs)
-
-    # ── Streaming chat integration helper (Agent compatibility) ──────────────
 
     async def stream_generate(
         self,
@@ -370,22 +348,17 @@ class HermesLLM:
         max_new_tokens: int | None = None,
         temperature: float | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Alias helper for agent message templates streaming."""
+        """Alias for agent compatibility."""
         async for token in self.stream(messages, max_new_tokens=max_new_tokens, temperature=temperature):
             yield token
 
-    # ── Singleton accessor ───────────────────────────────────────────────────
-
     @classmethod
     def get(cls) -> HermesLLM:
-        """Get the singleton instance (must call initialize() first)."""
         return cls()
 
 
-# Module-level singleton
 llm = HermesLLM()
 
 
 def get_llm() -> HermesLLM:
-    """FastAPI dependency — returns the initialized LLM singleton."""
     return llm

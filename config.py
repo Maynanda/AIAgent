@@ -49,7 +49,7 @@ class Settings(BaseSettings):
             "+asyncpg", ""
         )
 
-    # ── LLM ──────────────────────────────────────────────────
+    # ── LLM ────────────────────────────────────────────
     llm_provider: Literal["local", "openai"] = "local"
     llm_model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"
     llm_device: str = "cuda"
@@ -59,14 +59,23 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_top_p: float = 0.9
     llm_cache_dir: str = "./models"
-    llm_api_base: str = "http://localhost:11434/v1"
+    llm_api_base: str = "http://localhost:8080"
     llm_api_key: str = "not-needed"
+    # Endpoint paths (relative to llm_api_base)
+    llm_chat_path: str = "/v1/chat/completions"       # text-only generations
+    llm_multimodal_path: str = "/v1/multimodal"       # vision + text generations
 
-    # ── Embedding ────────────────────────────────────────────
+    # ── Embedding ─────────────────────────────────────────
+    embed_provider: Literal["local", "api"] = "local"
     embed_model_id: str = "nomic-ai/nomic-embed-text-v1.5"
     embed_device: str = "cuda"
     embed_batch_size: int = 32
     embed_dimension: int = 768
+    embed_api_base: str = "http://localhost:8080"
+    embed_api_key: str = "not-needed"
+    # Endpoint paths (relative to embed_api_base)
+    embed_api_path: str = "/v1/embeddings"            # single / small batch
+    embed_batch_api_path: str = "/v1/embeddings/batch" # large batch endpoint
 
     # ── Whisper STT ──────────────────────────────────────────
     whisper_model_size: str = "base"
